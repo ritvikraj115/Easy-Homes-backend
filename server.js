@@ -1,19 +1,39 @@
-require('dotenv').config(); 
-const express = require('express');
-const mongoose = require('mongoose');
-const authRoutes = require('./routes/authRoutes');
-const connectDb= require('./config/db')
-const auth0Routes = require('./routes/auth0Routes');
+// server/index.js (or app.js)
+require('dotenv').config();
+const express         = require('express');
+const cors            = require('cors');
+const connectDb       = require('./config/db');
+const authRoutes      = require('./routes/authRoutes');
+const auth0Routes     = require('./routes/auth0Routes');
+const favouriteRoutes = require('./routes/favouriteRoutes');
+
 const app = express();
+
+// === CORS SETUP ===
+// You can either allow all origins (for development)…
+
+// …or be explicit in production:
+app.use(cors({
+  origin: ['http://localhost:3000'],
+  credentials: true
+}));
+
+// === JSON PARSER ===
 app.use(express.json());
 
-// Add your MongoDB URI
+// === DB CONNECT ===
 connectDb();
 
+// === ROUTES ===
 app.use('/api/auth', authRoutes);
 app.use('/api/auth0', auth0Routes);
+app.use('/api/favourites', favouriteRoutes);
 
-// … other middleware, routes, error handlers …
+// === ERROR HANDLING ===
+// (your error handlers here)
 
+// === START SERVER ===
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+
+
