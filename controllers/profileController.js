@@ -1,50 +1,61 @@
-const Auth = require('../models/authModel');
+// server/controllers/profileController.js
+const Auth   = require('../models/authModel');
+const redis  = require('../config/redis');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
+// Helper to build the user cache key
+const userCacheKey = (userId) => `user:${userId}`;
+
 exports.getProfile = async (req, res, next) => {
-  // req.userId set by ensureAuthenticated middleware
- 
-  res.json({ success: true, user:req.user });
+  // req.user injected by your auth middleware
+  res.json({ success: true, user: req.user });
 };
 
 exports.updateProfile = async (req, res, next) => {
-  const { name, email } = req.body;
-  const updates = {};
-  if (name)  updates.name  = name;
-  if (email) updates.email = email;
-  const user = await Auth.findByIdAndUpdate(req.user._id, updates, { new: true })
-    .select('-password -otp*');
-  res.json({ success: true, user });
+  try {
+    const { name, email } = req.body;
+    const updates = {};
+    if (name)  updates.name  = name;
+    if (email) updates.email = email;
+
+    const userId = req.user._id;
+    const user = await Auth.findByIdAndUpdate(
+      userId,
+      updates,
+      { new: true }
+    ).select('-password -otp*');
+
+    // Invalidate the Redis cache for this user
+    await redis.del(userCacheKey(userId));
+
+    res.json({ success: true, user });
+  } catch (err) {
+    next(err);
+  }
 };
 
 exports.changePassword = async (req, res, next) => {
-  const { currentPassword, newPassword } = req.body;
-  const user = await Auth.findById(req.user._id);
-  const match = await user.comparePassword(currentPassword);
-  if (!match) return res.status(400).json({ success: false, message: 'Current password invalid' });
-  user.password = newPassword;
-  await user.save();
-  res.json({ success: true, message: 'Password updated' });
-};
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user._id;
 
-exports.getFavorites = async (req, res, next) => {
-  const user = await Auth.findById(req.userId).select('favorites');
-  res.json({ success: true, favorites: user.favorites });
-};
+    const user = await Auth.findById(userId);
+    const match = await user.comparePassword(currentPassword);
+    if (!match) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Current password invalid' });
+    }
 
-exports.addFavorite = async (req, res, next) => {
-  const { mlsId } = req.body;
-  await Auth.findByIdAndUpdate(req.userId, {
-    $addToSet: { favorites: mlsId }
-  });
-  res.json({ success: true });
-};
+    user.password = newPassword;
+    await user.save();
 
-exports.removeFavorite = async (req, res, next) => {
-  const { mlsId } = req.params;
-  await Auth.findByIdAndUpdate(req.userId, {
-    $pull: { favorites: mlsId }
-  });
-  res.json({ success: true });
+    // Invalidate the Redis cache for this user
+    await redis.del(userCacheKey(userId));
+
+    res.json({ success: true, message: 'Password updated' });
+  } catch (err) {
+    next(err);
+  }
 };

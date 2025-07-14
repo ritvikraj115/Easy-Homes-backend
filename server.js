@@ -7,6 +7,7 @@ const authRoutes      = require('./routes/authRoutes');
 const auth0Routes     = require('./routes/auth0Routes');
 const favouriteRoutes = require('./routes/favouriteRoutes');
 const profileRoutes = require('./routes/profileRoutes');
+const geocodeRoutes = require('./routes/geocodeRoutes');
 
 
 const app = express();
@@ -31,6 +32,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/auth0', auth0Routes);
 app.use('/api/favourites', favouriteRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/geocode', geocodeRoutes);
 // === ERROR HANDLING ===
 // (your error handlers here)
 
