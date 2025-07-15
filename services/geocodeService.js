@@ -10,7 +10,6 @@ async function geocodeAddress(address) {
   const key = `geocode:${address}`;
   const cached = await redis.get(key);
   if (cached) {
-    console.log('cached map found');
     return JSON.parse(cached);
   }
   const res = await client.geocode({
@@ -19,7 +18,6 @@ async function geocodeAddress(address) {
   const { lat, lng } = res.data.results[0].geometry.location;
   try {
      await redis.set(key, JSON.stringify({ lat, lng }), 'EX', TTL_SECONDS);
-     console.log('prop key set');
     
   } catch (error) {
     console.log(error);
