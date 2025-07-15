@@ -17,7 +17,15 @@ async function geocodeAddress(address) {
     params: { address, key: process.env.GOOGLE_MAPS_API_KEY }
   });
   const { lat, lng } = res.data.results[0].geometry.location;
-  await redis.set(key, JSON.stringify({ lat, lng }), 'EX', TTL_SECONDS);
+  try {
+     await redis.set(key, JSON.stringify({ lat, lng }), 'EX', TTL_SECONDS);
+     console.log('prop key set');
+    
+  } catch (error) {
+    console.log(error);
+    
+  }
+ 
   return { lat, lng };
 }
 

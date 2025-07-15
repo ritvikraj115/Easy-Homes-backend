@@ -13,7 +13,7 @@ exports.getFavourites = async (req, res) => {
     // 1️⃣ Try cache
     const cached = await redis.get(key);
     if (cached) {
-      console.log('cache found');
+      console.log(cached);
       return res.json(JSON.parse(cached));
     }
 
@@ -22,7 +22,15 @@ exports.getFavourites = async (req, res) => {
     const favs = freshUser.favorites || [];
 
     // 3️⃣ Cache it
-    await redis.set(key, JSON.stringify(favs), 'EX', 600);
+    try {
+       await redis.set(key, JSON.stringify(favs), 'EX', 600);
+       console.log('fav cached');
+      
+    } catch (error) {
+      console.log(error);
+      
+    }
+   
     return res.json(favs);
 
   } catch (err) {

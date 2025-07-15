@@ -26,10 +26,18 @@ module.exports = async function requireAuth(req, res, next) {
       user = JSON.parse(userJson);
     } else {
       // 3. Cache miss → load from DB
+      console.log('not found user cache');
       user = await Auth.findById(userId).lean();
       if (!user) throw new Error('User not found');
       // 4. Store in cache
-      await redis.set(cacheKey, JSON.stringify(user), 'EX', USER_CACHE_TTL);
+      try {
+        await redis.set(cacheKey, JSON.stringify(user), 'EX', USER_CACHE_TTL);
+        console.log('middleware cached');
+        
+      } catch (error) {
+        console.log(error)
+        
+      }
     }
 
     // 5. Attach to request and proceed
