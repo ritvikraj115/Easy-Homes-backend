@@ -58,11 +58,22 @@ const HEADERS_TIMEOUT = parseInt(process.env.HEADERS_TIMEOUT, 10) || 125_000;
 server.keepAliveTimeout = KEEP_ALIVE;
 server.headersTimeout = HEADERS_TIMEOUT;
 
+if (process.env.KEEP_ALIVE === 'true') {
+  const axios = require('axios');
+  setInterval(() => {
+    axios.get(process.env.BACKEND_URL)
+         .then(res => console.log('🔁 Self-ping OK:', res.status))
+         .catch(err => console.error('❌ Self-ping failed:', err.message));
+  }, 10 * 60 * 1000); // every 10 minutes
+}
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
   console.log(`→ keepAliveTimeout = ${KEEP_ALIVE}ms`);
   console.log(`→ headersTimeout   = ${HEADERS_TIMEOUT}ms`);
 });
+
+
 
 // === HANDLE UNCAUGHT ERRORS ===
 process.on('unhandledRejection', (reason, p) => {
