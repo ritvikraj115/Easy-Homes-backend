@@ -13,6 +13,7 @@
     "@googlemaps/google-maps-services-js": "^3.4.2",
     "auth0": "^4.26.0",
     "bcrypt": "^6.0.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.5.0",

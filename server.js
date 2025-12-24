@@ -9,6 +9,8 @@ const favouriteRoutes = require('./routes/favouriteRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const geocodeRoutes = require('./routes/geocodeRoutes');
 const forceCanonical = require('./middleware/forceCanonical');
+const compression = require('compression');
+
 
 
 const app = express();
@@ -22,6 +24,7 @@ app.use(cors({
 app.use(forceCanonical);
 // === JSON PARSER ===
 app.use(express.json());
+app.use(compression());
 
 // === DB CONNECT ===
 connectDb()
@@ -50,6 +53,7 @@ app.use((err, req, res, next) => {
   console.error('💥 ERROR:', err);
   res.status(err.status || 500).json({ message: err.message || 'Server error' });
 });
+
 
 // === START SERVER ===
 const PORT = process.env.PORT || 5000;
