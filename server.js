@@ -8,6 +8,8 @@ const auth0Routes = require('./routes/auth0Routes');
 const favouriteRoutes = require('./routes/favouriteRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const geocodeRoutes = require('./routes/geocodeRoutes');
+const forceCanonical = require('./middleware/forceCanonical');
+
 
 const app = express();
 
@@ -17,6 +19,7 @@ app.use(cors({
   credentials: true,
 }));
 
+app.use(forceCanonical);
 // === JSON PARSER ===
 app.use(express.json());
 
