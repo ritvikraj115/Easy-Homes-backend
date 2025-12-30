@@ -1,3 +1,4 @@
+const helmet = require('helmet');
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -15,7 +16,15 @@ const compression = require('compression');
 
 
 const app = express();
-
+// === SECURITY HEADERS ===
+app.use(helmet());
+// Force Strict-Transport-Security for HTTPS
+app.use((req, res, next) => {
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  }
+  next();
+});
 // === CORS SETUP ===
 app.use(cors({
   origin: [process.env.FRONTEND_URL],
