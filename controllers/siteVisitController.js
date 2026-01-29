@@ -1,6 +1,6 @@
 const SiteVisit = require('../models/siteVisitModel');
 const sendMail = require('../utils/sendMail');
-const { sendWhatsAppText } = require('../services/whatsappService');
+const { sendSiteVisitTemplate, sendFreeTextMessage} = require('../services/whatsappService');
 
 exports.create = async (req, res, next) => {
   try {
@@ -42,8 +42,8 @@ exports.create = async (req, res, next) => {
 
     try { await Promise.all(emailPromises); } catch (e) { console.warn('Email send error:', e.message); }
 
-    // WhatsApp user notification (best-effort)
-    await sendWhatsAppText(phone, `We received your site visit request for ${project} on ${dateStr}. We will confirm shortly. — Easy Homes`);
+  await sendSiteVisitTemplate(phone, dateStr);
+  // await sendFreeTextMessage(phone, userMsg);
 
     return res.status(201).json({ success: true, data: visit });
   } catch (err) {
