@@ -13,13 +13,22 @@ router.post('/', async (req, res) => {
     if (!Array.isArray(addresses)) {
       return res.status(400).json({ error: 'addresses must be an array' });
     }
+
+    if (addresses.length === 0) {
+      return res.json({ results: [] });
+    }
+
     const results = await Promise.all(
       addresses.map(addr => geocodeAddress(addr))
     );
+
     res.json({ results });
   } catch (err) {
-    console.error('Geocode error:', err);
-    res.status(500).json({ error: 'Geocode failed' });
+    console.error('Geocode error:', err.message);
+    res.status(err.statusCode || 500).json({
+      error: err.message || 'Geocode failed',
+      code: err.code || 'GEOCODE_FAILED'
+    });
   }
 });
 
