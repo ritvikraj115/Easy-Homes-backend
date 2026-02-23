@@ -10,6 +10,8 @@ const favouriteRoutes = require('./routes/favouriteRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const geocodeRoutes = require('./routes/geocodeRoutes');
 const siteVisitRoutes = require('./routes/siteVisitRoutes');
+const propertyRoutes = require('./routes/propertyRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const forceCanonical = require('./middleware/forceCanonical');
 const compression = require('compression');
 
@@ -55,6 +57,8 @@ app.use('/api/favourites', favouriteRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/geocode', geocodeRoutes);
 app.use('/api/site-visits', siteVisitRoutes);
+app.use('/api/properties', propertyRoutes);
+app.use('/api/admin', adminRoutes);
 
 // === HEALTH CHECK ===
 app.get('/healthz', (_, res) => res.status(200).send('OK'));
