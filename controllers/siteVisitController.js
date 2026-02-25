@@ -47,6 +47,126 @@ function normalizeTransportRequired(value) {
   return 'Yes';
 }
 
+function scheduleSiteVisitPostProcessing(job) {
+  setImmediate(() => {
+    processSiteVisitPostProcessing(job).catch((err) => {
+      console.error('[site-visit] post_process.failed', err.message);
+      zohoDebug('post_process.error', {
+        visitId: job?.visitId || null,
+        message: err.message,
+        status: err.response?.status || null,
+        data: err.response?.data || null,
+        details: err.details || null
+      });
+    });
+  });
+}
+
+async function processSiteVisitPostProcessing(job) {
+  const {
+    visitId,
+    project,
+    name,
+    phone,
+    email,
+    preferredDate,
+    transportRequired,
+    notes,
+    pickupAddress,
+    pickupMode,
+    pickupLat,
+    pickupLng
+  } = job;
+
+  const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
+  const dateStr = new Date(preferredDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  const userMsg = `Hi ${name},\n\nWe received your site visit request for ${project}.\nPreferred date/time: ${dateStr}.\nOur team will contact you shortly to confirm.\n\n- Easy Homes`;
+  const adminMsg = `New Site Visit Request\nProject: ${project}\nName: ${name}\nPhone: ${phone}\nEmail: ${email || '-'}\nPreferred: ${dateStr}\nTransport Required: ${normalizedTransportRequired}\nPickup Address: ${pickupAddress || '-'}\nPickup Mode: ${pickupMode || 'manual'}\nPickup Coordinates: ${pickupLat && pickupLng ? `${pickupLat}, ${pickupLng}` : '-'}\nNotes: ${notes || '-'}`;
+
+  const emailPromises = [];
+  if (email) {
+    emailPromises.push(
+      sendMail({
+        to: email,
+        subject: `We received your site visit request - ${project}`,
+        text: userMsg,
+        html: userMsg.replace(/\n/g, '<br/>')
+      })
+    );
+  }
+
+  if (process.env.ADMIN_EMAIL) {
+    emailPromises.push(
+      sendMail({
+        to: process.env.ADMIN_EMAIL,
+        subject: `New Site Visit - ${project}`,
+        text: adminMsg,
+        html: adminMsg.replace(/\n/g, '<br/>')
+      })
+    );
+  }
+
+  try {
+    await Promise.all(emailPromises);
+  } catch (e) {
+    console.warn('Email send error:', e.message);
+  }
+
+  zohoDebug('zoho.start', { visitId });
+  const zohoResponse = await createZohoAppointment({
+    project,
+    name,
+    phone,
+    email,
+    preferredDate,
+    transportRequired: normalizedTransportRequired,
+    pickupAddress,
+    pickupMode,
+    pickupLat,
+    pickupLng,
+    notes
+  });
+  zohoDebug('zoho.done', { visitId, zohoResponse });
+
+  try {
+    const crmNotes = [
+      'Lead event: Site visit scheduled via website form',
+      notes ? `Site visit notes: ${notes}` : null,
+      pickupMode ? `Pickup mode: ${pickupMode}` : null,
+      pickupLat && pickupLng ? `Pickup coordinates: ${pickupLat}, ${pickupLng}` : null,
+      pickupAddress ? `Pickup address: ${pickupAddress}` : null,
+      `Transport required: ${normalizedTransportRequired}`,
+    ].filter(Boolean).join('\n');
+
+    const crmResponse = await createZohoCrmLead({
+      project,
+      source: 'Website',
+      leadStatus: 'Visit Scheduled',
+      name,
+      phone,
+      email,
+      preferredDate,
+      pickupAddress,
+      notes: crmNotes,
+    });
+    zohoDebug('crm.done', { visitId, synced: Boolean(crmResponse) });
+  } catch (crmError) {
+    console.error('[site-visit] crm.sync.failed', crmError.message);
+    zohoDebug('crm.error', {
+      visitId,
+      message: crmError.message,
+      code: crmError.code || null,
+      details: crmError.details || crmError.response?.data || null,
+    });
+    if (isZohoCrmStrictMode()) {
+      throw crmError;
+    }
+  }
+
+  await sendSiteVisitTemplate(phone, dateStr);
+  // await sendFreeTextMessage(phone, userMsg);
+}
+
 exports.create = async (req, res, next) => {
   try {
     const {
@@ -99,96 +219,29 @@ exports.create = async (req, res, next) => {
       pickupLng: pickupLng ?? undefined,
       notes
     });
-    zohoDebug('create.saved', { visitId: String(visit?._id || '') });
+    const visitId = String(visit?._id || '');
+    zohoDebug('create.saved', { visitId, asyncProcessing: true });
 
-    const dateStr = new Date(preferredDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-    const userMsg = `Hi ${name},\n\nWe received your site visit request for ${project}.\nPreferred date/time: ${dateStr}.\nOur team will contact you shortly to confirm.\n\n- Easy Homes`;
-    const adminMsg = `New Site Visit Request\nProject: ${project}\nName: ${name}\nPhone: ${phone}\nEmail: ${email || '-'}\nPreferred: ${dateStr}\nTransport Required: ${normalizeTransportRequired(transportRequired)}\nPickup Address: ${pickupAddress || '-'}\nPickup Mode: ${pickupMode || 'manual'}\nPickup Coordinates: ${pickupLat && pickupLng ? `${pickupLat}, ${pickupLng}` : '-'}\nNotes: ${notes || '-'}`;
-
-    const emailPromises = [];
-    if (email) {
-      emailPromises.push(
-        sendMail({
-          to: email,
-          subject: `We received your site visit request - ${project}`,
-          text: userMsg,
-          html: userMsg.replace(/\n/g, '<br/>')
-        })
-      );
-    }
-
-    if (process.env.ADMIN_EMAIL) {
-      emailPromises.push(
-        sendMail({
-          to: process.env.ADMIN_EMAIL,
-          subject: `New Site Visit - ${project}`,
-          text: adminMsg,
-          html: adminMsg.replace(/\n/g, '<br/>')
-        })
-      );
-    }
-
-    try {
-      await Promise.all(emailPromises);
-    } catch (e) {
-      console.warn('Email send error:', e.message);
-    }
-
-    zohoDebug('zoho.start', { visitId: String(visit?._id || '') });
-    const zohoResponse = await createZohoAppointment({
+    scheduleSiteVisitPostProcessing({
+      visitId,
       project,
       name,
       phone,
       email,
       preferredDate,
       transportRequired: normalizeTransportRequired(transportRequired),
+      notes,
       pickupAddress,
       pickupMode,
       pickupLat,
-      pickupLng,
-      notes
+      pickupLng
     });
-    zohoDebug('zoho.done', { visitId: String(visit?._id || ''), zohoResponse });
 
-    try {
-      const crmNotes = [
-        'Lead event: Site visit scheduled via website form',
-        notes ? `Site visit notes: ${notes}` : null,
-        pickupMode ? `Pickup mode: ${pickupMode}` : null,
-        pickupLat && pickupLng ? `Pickup coordinates: ${pickupLat}, ${pickupLng}` : null,
-        pickupAddress ? `Pickup address: ${pickupAddress}` : null,
-        `Transport required: ${normalizeTransportRequired(transportRequired)}`,
-      ].filter(Boolean).join('\n');
-
-      const crmResponse = await createZohoCrmLead({
-        project,
-        source: 'Website',
-        leadStatus: 'Visit Scheduled',
-        name,
-        phone,
-        email,
-        preferredDate,
-        pickupAddress,
-        notes: crmNotes,
-      });
-      zohoDebug('crm.done', { visitId: String(visit?._id || ''), synced: Boolean(crmResponse) });
-    } catch (crmError) {
-      console.error('[site-visit] crm.sync.failed', crmError.message);
-      zohoDebug('crm.error', {
-        visitId: String(visit?._id || ''),
-        message: crmError.message,
-        code: crmError.code || null,
-        details: crmError.details || crmError.response?.data || null,
-      });
-      if (isZohoCrmStrictMode()) {
-        throw crmError;
-      }
-    }
-
-    await sendSiteVisitTemplate(phone, dateStr);
-    // await sendFreeTextMessage(phone, userMsg);
-
-    return res.status(201).json({ success: true, data: visit });
+    return res.status(201).json({
+      success: true,
+      data: visit,
+      processing: 'queued'
+    });
   } catch (err) {
     console.error('[site-visit] create.failed', err.message);
     zohoDebug('create.error', {
