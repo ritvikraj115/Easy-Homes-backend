@@ -10,6 +10,7 @@ const favouriteRoutes = require('./routes/favouriteRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const geocodeRoutes = require('./routes/geocodeRoutes');
 const siteVisitRoutes = require('./routes/siteVisitRoutes');
+const leadRoutes = require('./routes/leadRoutes');
 const propertyRoutes = require('./routes/propertyRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const forceCanonical = require('./middleware/forceCanonical');
@@ -57,6 +58,7 @@ app.use('/api/favourites', favouriteRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/geocode', geocodeRoutes);
 app.use('/api/site-visits', siteVisitRoutes);
+app.use('/api/leads', leadRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/admin', adminRoutes);
 

@@ -2,6 +2,7 @@ const SiteVisit = require('../models/siteVisitModel');
 const sendMail = require('../utils/sendMail');
 const { sendSiteVisitTemplate, sendFreeTextMessage } = require('../services/whatsappService');
 const { createZohoAppointment } = require('../services/zohoBookingsService');
+const { createZohoCrmLead, isZohoCrmStrictMode } = require('../services/zohoCrmService');
 
 function isZohoDebugEnabled() {
   const value = String(process.env.ZOHO_BOOKINGS_DEBUG || '').toLowerCase();
@@ -148,6 +149,41 @@ exports.create = async (req, res, next) => {
       notes
     });
     zohoDebug('zoho.done', { visitId: String(visit?._id || ''), zohoResponse });
+
+    try {
+      const crmNotes = [
+        'Lead event: Site visit scheduled via website form',
+        notes ? `Site visit notes: ${notes}` : null,
+        pickupMode ? `Pickup mode: ${pickupMode}` : null,
+        pickupLat && pickupLng ? `Pickup coordinates: ${pickupLat}, ${pickupLng}` : null,
+        pickupAddress ? `Pickup address: ${pickupAddress}` : null,
+        `Transport required: ${normalizeTransportRequired(transportRequired)}`,
+      ].filter(Boolean).join('\n');
+
+      const crmResponse = await createZohoCrmLead({
+        project,
+        source: 'Website',
+        leadStatus: 'Visit Scheduled',
+        name,
+        phone,
+        email,
+        preferredDate,
+        pickupAddress,
+        notes: crmNotes,
+      });
+      zohoDebug('crm.done', { visitId: String(visit?._id || ''), synced: Boolean(crmResponse) });
+    } catch (crmError) {
+      console.error('[site-visit] crm.sync.failed', crmError.message);
+      zohoDebug('crm.error', {
+        visitId: String(visit?._id || ''),
+        message: crmError.message,
+        code: crmError.code || null,
+        details: crmError.details || crmError.response?.data || null,
+      });
+      if (isZohoCrmStrictMode()) {
+        throw crmError;
+      }
+    }
 
     await sendSiteVisitTemplate(phone, dateStr);
     // await sendFreeTextMessage(phone, userMsg);
