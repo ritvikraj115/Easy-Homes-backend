@@ -165,6 +165,41 @@ router.get('/image-proxy', async (req, res) => {
   }
 });
 
+router.get('/:mlsNumber', async (req, res) => {
+  const requestedMlsNumber =
+    typeof req.params.mlsNumber === 'string' ? decodeURIComponent(req.params.mlsNumber).trim() : '';
+
+  if (!requestedMlsNumber) {
+    return res.status(400).json({
+      success: false,
+      message: 'A property MLS number is required.',
+    });
+  }
+
+  try {
+    const properties = await readProperties();
+    const property = properties.find((item) => item?.mlsNumber === requestedMlsNumber);
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: 'Property not found.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: mapPropertyImagesForClient(property, req),
+    });
+  } catch (err) {
+    console.error('Failed to read property:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load property.',
+    });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const properties = await readProperties();
