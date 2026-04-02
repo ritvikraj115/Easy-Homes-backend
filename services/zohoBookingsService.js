@@ -346,6 +346,22 @@ function parsePickupAddress(pickupAddress, pickupLat, pickupLng) {
   };
 }
 
+function buildSelfArrivalPickupAddress() {
+  const summaryText = String(
+    process.env.ZOHO_BOOKINGS_SELF_ARRIVAL_PICKUP_TEXT ||
+    'Self-arrival - transport not required'
+  ).trim();
+
+  return {
+    addr_1: summaryText || 'Self-arrival - transport not required',
+    addr_2: '',
+    city: '',
+    state: '',
+    country: 'India',
+    postal: ''
+  };
+}
+
 function looksLikeCreatedAppointment(returnValue) {
   if (!returnValue || typeof returnValue !== 'object') return false;
   return Boolean(
@@ -378,13 +394,17 @@ function isCreateAppointmentFailure(returnValue) {
 function buildAdditionalFields({ pickupAddress, pickupLat, pickupLng, transportRequired }) {
   const pickupFieldKey = process.env.ZOHO_BOOKINGS_PICKUP_ADDRESS_FIELD || 'Pickup Address';
   const transportFieldKey = process.env.ZOHO_BOOKINGS_TRANSPORT_FIELD || 'Need Transport';
+  const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
   const fields = {};
 
   if (transportFieldKey) {
-    fields[transportFieldKey] = normalizeTransportRequired(transportRequired);
+    fields[transportFieldKey] = normalizedTransportRequired;
   }
 
-  if (pickupAddress || Number.isFinite(Number(pickupLat)) || Number.isFinite(Number(pickupLng))) {
+  if (normalizedTransportRequired === 'No') {
+    // Zoho Bookings can still enforce this custom field as mandatory at the service level.
+    fields[pickupFieldKey] = buildSelfArrivalPickupAddress();
+  } else if (pickupAddress || Number.isFinite(Number(pickupLat)) || Number.isFinite(Number(pickupLng))) {
     // Official Zoho format for Address custom field type.
     fields[pickupFieldKey] = parsePickupAddress(pickupAddress, pickupLat, pickupLng);
   }

@@ -47,6 +47,37 @@ function normalizeTransportRequired(value) {
   return 'Yes';
 }
 
+function normalizeOptionalValue(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  return value;
+}
+
+function sanitizePickupDetails({
+  transportRequired,
+  pickupAddress,
+  pickupMode,
+  pickupLat,
+  pickupLng
+}) {
+  const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
+  if (normalizedTransportRequired !== 'Yes') {
+    return {
+      pickupAddress: undefined,
+      pickupMode: undefined,
+      pickupLat: undefined,
+      pickupLng: undefined
+    };
+  }
+
+  const normalizedPickupAddress = String(pickupAddress || '').trim() || undefined;
+  return {
+    pickupAddress: normalizedPickupAddress,
+    pickupMode: pickupMode || 'manual',
+    pickupLat: normalizeOptionalValue(pickupLat),
+    pickupLng: normalizeOptionalValue(pickupLng)
+  };
+}
+
 function scheduleSiteVisitPostProcessing(job) {
   setImmediate(() => {
     processSiteVisitPostProcessing(job).catch((err) => {
@@ -79,9 +110,38 @@ async function processSiteVisitPostProcessing(job) {
   } = job;
 
   const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
+  const {
+    pickupAddress: normalizedPickupAddress,
+    pickupMode: normalizedPickupMode,
+    pickupLat: normalizedPickupLat,
+    pickupLng: normalizedPickupLng
+  } = sanitizePickupDetails({
+    transportRequired: normalizedTransportRequired,
+    pickupAddress,
+    pickupMode,
+    pickupLat,
+    pickupLng
+  });
   const dateStr = new Date(preferredDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
   const userMsg = `Hi ${name},\n\nWe received your site visit request for ${project}.\nPreferred date/time: ${dateStr}.\nOur team will contact you shortly to confirm.\n\n- Easy Homes`;
-  const adminMsg = `New Site Visit Request\nProject: ${project}\nName: ${name}\nPhone: ${phone}\nEmail: ${email || '-'}\nPreferred: ${dateStr}\nTransport Required: ${normalizedTransportRequired}\nPickup Address: ${pickupAddress || '-'}\nPickup Mode: ${pickupMode || 'manual'}\nPickup Coordinates: ${pickupLat && pickupLng ? `${pickupLat}, ${pickupLng}` : '-'}\nNotes: ${notes || '-'}`;
+  const adminLines = [
+    'New Site Visit Request',
+    `Project: ${project}`,
+    `Name: ${name}`,
+    `Phone: ${phone}`,
+    `Email: ${email || '-'}`,
+    `Preferred: ${dateStr}`,
+    `Transport Required: ${normalizedTransportRequired}`,
+  ];
+  if (normalizedTransportRequired === 'Yes') {
+    adminLines.push(`Pickup Address: ${normalizedPickupAddress || '-'}`);
+    adminLines.push(`Pickup Mode: ${normalizedPickupMode || '-'}`);
+    adminLines.push(
+      `Pickup Coordinates: ${normalizedPickupLat && normalizedPickupLng ? `${normalizedPickupLat}, ${normalizedPickupLng}` : '-'}`
+    );
+  }
+  adminLines.push(`Notes: ${notes || '-'}`);
+  const adminMsg = adminLines.join('\n');
 
   const emailPromises = [];
   if (email) {
@@ -120,10 +180,10 @@ async function processSiteVisitPostProcessing(job) {
     email,
     preferredDate,
     transportRequired: normalizedTransportRequired,
-    pickupAddress,
-    pickupMode,
-    pickupLat,
-    pickupLng,
+    pickupAddress: normalizedPickupAddress,
+    pickupMode: normalizedPickupMode,
+    pickupLat: normalizedPickupLat,
+    pickupLng: normalizedPickupLng,
     notes
   });
   zohoDebug('zoho.done', { visitId, zohoResponse });
@@ -132,9 +192,9 @@ async function processSiteVisitPostProcessing(job) {
     const crmNotes = [
       'Lead event: Site visit scheduled via website form',
       notes ? `Site visit notes: ${notes}` : null,
-      pickupMode ? `Pickup mode: ${pickupMode}` : null,
-      pickupLat && pickupLng ? `Pickup coordinates: ${pickupLat}, ${pickupLng}` : null,
-      pickupAddress ? `Pickup address: ${pickupAddress}` : null,
+      normalizedPickupMode ? `Pickup mode: ${normalizedPickupMode}` : null,
+      normalizedPickupLat && normalizedPickupLng ? `Pickup coordinates: ${normalizedPickupLat}, ${normalizedPickupLng}` : null,
+      normalizedPickupAddress ? `Pickup address: ${normalizedPickupAddress}` : null,
       `Transport required: ${normalizedTransportRequired}`,
     ].filter(Boolean).join('\n');
 
@@ -146,7 +206,7 @@ async function processSiteVisitPostProcessing(job) {
       phone,
       email,
       preferredDate,
-      pickupAddress,
+      pickupAddress: normalizedPickupAddress,
       notes: crmNotes,
     });
     zohoDebug('crm.done', { visitId, synced: Boolean(crmResponse) });
@@ -182,6 +242,19 @@ exports.create = async (req, res, next) => {
       pickupLat,
       pickupLng
     } = req.body || {};
+    const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
+    const {
+      pickupAddress: normalizedPickupAddress,
+      pickupMode: normalizedPickupMode,
+      pickupLat: normalizedPickupLat,
+      pickupLng: normalizedPickupLng
+    } = sanitizePickupDetails({
+      transportRequired: normalizedTransportRequired,
+      pickupAddress,
+      pickupMode,
+      pickupLat,
+      pickupLng
+    });
 
     zohoDebug('create.received', {
       project,
@@ -189,10 +262,10 @@ exports.create = async (req, res, next) => {
       phone: maskPhone(phone),
       hasEmail: Boolean(email),
       preferredDate: preferredDate || null,
-      transportRequired: normalizeTransportRequired(transportRequired),
+      transportRequired: normalizedTransportRequired,
       hasNotes: Boolean(notes),
-      hasPickupAddress: Boolean(pickupAddress),
-      pickupMode: pickupMode || null
+      hasPickupAddress: Boolean(normalizedPickupAddress),
+      pickupMode: normalizedPickupMode || null
     });
 
     if (!name || !phone || !preferredDate) {
@@ -202,7 +275,7 @@ exports.create = async (req, res, next) => {
     const normalizedProject = String(project || '').trim().toLowerCase();
     const scopedProjects = getZohoProjectScope();
     const requiresPickupAddress = scopedProjects ? scopedProjects.includes(normalizedProject) : normalizedProject === 'kalpavruksha';
-    if (requiresPickupAddress && !pickupAddress) {
+    if (normalizedTransportRequired === 'Yes' && requiresPickupAddress && !normalizedPickupAddress) {
       return res.status(400).json({ success: false, message: 'pickupAddress is required' });
     }
 
@@ -212,11 +285,11 @@ exports.create = async (req, res, next) => {
       phone,
       email,
       preferredDate,
-      transportRequired: normalizeTransportRequired(transportRequired),
-      pickupAddress: pickupAddress || undefined,
-      pickupMode: pickupMode || 'manual',
-      pickupLat: pickupLat ?? undefined,
-      pickupLng: pickupLng ?? undefined,
+      transportRequired: normalizedTransportRequired,
+      pickupAddress: normalizedPickupAddress,
+      pickupMode: normalizedPickupMode,
+      pickupLat: normalizedPickupLat,
+      pickupLng: normalizedPickupLng,
       notes
     });
     const visitId = String(visit?._id || '');
@@ -229,12 +302,12 @@ exports.create = async (req, res, next) => {
       phone,
       email,
       preferredDate,
-      transportRequired: normalizeTransportRequired(transportRequired),
+      transportRequired: normalizedTransportRequired,
       notes,
-      pickupAddress,
-      pickupMode,
-      pickupLat,
-      pickupLng
+      pickupAddress: normalizedPickupAddress,
+      pickupMode: normalizedPickupMode,
+      pickupLat: normalizedPickupLat,
+      pickupLng: normalizedPickupLng
     });
 
     return res.status(201).json({

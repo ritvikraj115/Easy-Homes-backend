@@ -180,6 +180,7 @@ function buildLeadPayload({
     Company: company || 'Easy Homes',
     Lead_Source: String(source || 'Website').trim(),
     Phone: String(phone || '').trim(),
+    Mobile: String(phone || '').trim(),
   };
 
   if (firstName) payload.First_Name = firstName;
@@ -303,9 +304,16 @@ async function findExistingLeadByPhone({
   }
   for (const value of candidateValues) {
     attempts.push({
-      mode: 'criteria',
+      mode: 'criteria_phone',
       query: value,
       params: { criteria: `(Phone:equals:${escapeCriteriaValue(value)})` },
+    });
+  }
+  for (const value of candidateValues) {
+    attempts.push({
+      mode: 'criteria_mobile',
+      query: value,
+      params: { criteria: `(Mobile:equals:${escapeCriteriaValue(value)})` },
     });
   }
 

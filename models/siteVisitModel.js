@@ -9,7 +9,7 @@ const SiteVisitSchema = new mongoose.Schema(
     preferredDate: { type: Date, required: true },
     pickupAddress: { type: String },
     transportRequired: { type: String, enum: ['Yes', 'No'], default: 'Yes' },
-    pickupMode: { type: String, enum: ['manual', 'map'], default: 'manual' },
+    pickupMode: { type: String, enum: ['manual', 'map'] },
     pickupLat: { type: Number },
     pickupLng: { type: Number },
     notes: { type: String },
