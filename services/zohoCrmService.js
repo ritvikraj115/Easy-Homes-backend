@@ -158,6 +158,294 @@ function splitName(fullName) {
   };
 }
 
+function setConfiguredFieldValue(payload, fieldApiName, value) {
+  const apiName = String(fieldApiName || '').trim();
+  const normalizedValue = String(value || '').trim();
+
+  if (!apiName || !normalizedValue) {
+    return;
+  }
+
+  payload[apiName] = normalizedValue;
+}
+
+function normalizeTags(tags) {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalizedTags = [];
+
+  for (const item of tags) {
+    const name = String(item || '').trim();
+    const key = name.toLowerCase();
+
+    if (!name || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalizedTags.push(name);
+  }
+
+  return normalizedTags;
+}
+
+function getTagsSettingsEndpoint(apiDomain, apiVersion) {
+  return `${String(apiDomain).replace(/\/$/, '')}/crm/${apiVersion}/settings/tags`;
+}
+
+function getTagScopeHints(operation) {
+  return [
+    'ZohoCRM.settings.ALL',
+    `ZohoCRM.settings.tags.${operation}`,
+  ];
+}
+
+function buildTagScopeMismatchError({ endpoint, moduleApiName, operation, status, responseData }) {
+  const scopeHints = getTagScopeHints(operation);
+
+  logDebug('tag.scope_mismatch', {
+    endpoint,
+    moduleApiName,
+    operation,
+    status,
+    responseData,
+    scopeHints,
+  });
+
+  const error = new Error(
+    `Zoho CRM tag scope mismatch: generate a CRM token with ${scopeHints.join(', ')} scopes.`,
+  );
+  error.code = 'ZOHO_CRM_TAG_SCOPE_MISMATCH';
+  error.details = {
+    moduleApiName,
+    operation,
+    status,
+    response: responseData,
+    scopeHints,
+  };
+  return error;
+}
+
+function maybeThrowTagScopeMismatch({ error, endpoint, moduleApiName, operation }) {
+  const status = Number(error?.response?.status || 0);
+  const responseData = error?.response?.data || null;
+  const errorCode = responseData?.code || null;
+
+  if (status === 401 && errorCode === 'OAUTH_SCOPE_MISMATCH') {
+    throw buildTagScopeMismatchError({
+      endpoint,
+      moduleApiName,
+      operation,
+      status,
+      responseData,
+    });
+  }
+}
+
+async function getModuleTags({
+  accessToken,
+  apiDomain,
+  apiVersion,
+  moduleApiName,
+}) {
+  const endpoint = getTagsSettingsEndpoint(apiDomain, apiVersion);
+
+  let response;
+  try {
+    response = await axios.get(endpoint, {
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+      },
+      params: {
+        module: moduleApiName,
+      },
+      timeout: 20000,
+    });
+  } catch (error) {
+    maybeThrowTagScopeMismatch({
+      error,
+      endpoint,
+      moduleApiName,
+      operation: 'READ',
+    });
+    throw error;
+  }
+
+  return Array.isArray(response?.data?.tags) ? response.data.tags : [];
+}
+
+async function createModuleTags({
+  accessToken,
+  apiDomain,
+  apiVersion,
+  moduleApiName,
+  tags,
+}) {
+  const endpoint = getTagsSettingsEndpoint(apiDomain, apiVersion);
+
+  try {
+    await axios.post(
+      endpoint,
+      {
+        tags: tags.map((name) => ({ name })),
+      },
+      {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        params: {
+          module: moduleApiName,
+        },
+        timeout: 20000,
+      },
+    );
+  } catch (error) {
+    maybeThrowTagScopeMismatch({
+      error,
+      endpoint,
+      moduleApiName,
+      operation: 'CREATE',
+    });
+
+    const status = Number(error?.response?.status || 0);
+    const responseData = error?.response?.data || null;
+    const errorCode = responseData?.code || null;
+    const duplicateLikeError =
+      status === 400 &&
+      (errorCode === 'DUPLICATE_DATA' || errorCode === 'INVALID_DATA' || errorCode === 'PATTERN_NOT_MATCHED');
+
+    if (!duplicateLikeError) {
+      throw error;
+    }
+  }
+}
+
+async function ensureModuleTags({
+  accessToken,
+  apiDomain,
+  apiVersion,
+  moduleApiName,
+  tagNames,
+}) {
+  const normalizedTagNames = normalizeTags(tagNames);
+  if (!normalizedTagNames.length) {
+    return [];
+  }
+
+  let availableTags = await getModuleTags({
+    accessToken,
+    apiDomain,
+    apiVersion,
+    moduleApiName,
+  });
+
+  const availableTagMap = new Map(
+    availableTags.map((tag) => [String(tag?.name || '').trim().toLowerCase(), tag]),
+  );
+
+  const missingTags = normalizedTagNames.filter((name) => !availableTagMap.has(name.toLowerCase()));
+
+  if (missingTags.length) {
+    await createModuleTags({
+      accessToken,
+      apiDomain,
+      apiVersion,
+      moduleApiName,
+      tags: missingTags,
+    });
+
+    availableTags = await getModuleTags({
+      accessToken,
+      apiDomain,
+      apiVersion,
+      moduleApiName,
+    });
+  }
+
+  const refreshedTagMap = new Map(
+    availableTags.map((tag) => [String(tag?.name || '').trim().toLowerCase(), tag]),
+  );
+
+  return normalizedTagNames.map((name) => {
+    const tag = refreshedTagMap.get(name.toLowerCase());
+    if (!tag?.name) {
+      throw new Error(`Zoho CRM tag "${name}" could not be created or loaded.`);
+    }
+
+    return {
+      name: tag.name,
+      id: tag.id,
+      color_code: tag.color_code || undefined,
+    };
+  });
+}
+
+async function addTagsToRecord({
+  accessToken,
+  apiDomain,
+  apiVersion,
+  moduleApiName,
+  recordId,
+  tags,
+}) {
+  if (!recordId) {
+    return;
+  }
+
+  const normalizedTags = normalizeTags(tags);
+  if (!normalizedTags.length) {
+    return;
+  }
+
+  const resolvedTags = await ensureModuleTags({
+    accessToken,
+    apiDomain,
+    apiVersion,
+    moduleApiName,
+    tagNames: normalizedTags,
+  });
+
+  const endpoint = `${String(apiDomain).replace(/\/$/, '')}/crm/${apiVersion}/${moduleApiName}/${recordId}/actions/add_tags`;
+
+  let response;
+  try {
+    response = await axios.post(
+      endpoint,
+      {
+        tags: resolvedTags,
+      },
+      {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 20000,
+      },
+    );
+  } catch (error) {
+    maybeThrowScopeMismatch({
+      error,
+      endpoint,
+      moduleApiName,
+      scopeHints: getScopeHints(moduleApiName),
+    });
+    throw error;
+  }
+
+  const addTagsResult = response?.data?.data?.[0];
+  if (!addTagsResult || addTagsResult.status !== 'success') {
+    const reason = addTagsResult?.message || 'Zoho CRM add tags failed';
+    const error = new Error(reason);
+    error.code = 'ZOHO_CRM_ADD_TAGS_FAILED';
+    error.details = response?.data || null;
+    throw error;
+  }
+}
+
 function buildLeadPayload({
   name,
   phone,
@@ -167,7 +455,9 @@ function buildLeadPayload({
   leadStatus,
   preferredDate,
   pickupAddress,
+  requirements,
   notes,
+  tags,
 }) {
   const { firstName, lastName } = splitName(name);
   const company = String(
@@ -187,12 +477,23 @@ function buildLeadPayload({
   if (email) payload.Email = String(email).trim();
   if (leadStatus) payload.Lead_Status = String(leadStatus).trim();
 
+  const normalizedRequirements = String(requirements || '').trim();
+  if (normalizedRequirements) {
+    setConfiguredFieldValue(
+      payload,
+      process.env.ZOHO_CRM_REQUIREMENTS_FIELD_API_NAME,
+      normalizedRequirements,
+    );
+  }
+
   const descriptionBits = [];
   if (project) descriptionBits.push(`Project: ${String(project).trim()}`);
   if (preferredDate) descriptionBits.push(`Preferred Date: ${String(preferredDate).trim()}`);
   if (pickupAddress) descriptionBits.push(`Pickup Address: ${String(pickupAddress).trim()}`);
+  if (normalizedRequirements) descriptionBits.push(`Requirements: ${normalizedRequirements}`);
   if (notes) descriptionBits.push(`Notes: ${String(notes).trim()}`);
   if (descriptionBits.length) payload.Description = descriptionBits.join('\n');
+  payload.__normalizedTags = normalizeTags(tags);
 
   return payload;
 }
@@ -200,6 +501,8 @@ function buildLeadPayload({
 const LEAD_STATUS_PRIORITY = Object.freeze({
   'Downloaded Brochure': 10,
   'Downloaded Layout': 10,
+  'Requested Callback': 15,
+  'Callback Requested': 15,
   'Visit Scheduled': 20,
 });
 
@@ -406,7 +709,9 @@ async function createZohoCrmLead(input) {
   const moduleApiName = process.env.ZOHO_CRM_MODULE || 'Leads';
   const apiVersion = String(process.env.ZOHO_CRM_API_VERSION || 'v8').trim();
   const endpoint = `${String(apiDomain).replace(/\/$/, '')}/crm/${apiVersion}/${moduleApiName}`;
-  const leadPayload = buildLeadPayload(input || {});
+  const rawLeadPayload = buildLeadPayload(input || {});
+  const recordTags = Array.isArray(rawLeadPayload.__normalizedTags) ? rawLeadPayload.__normalizedTags : [];
+  const { __normalizedTags, ...leadPayload } = rawLeadPayload;
   const scopeHints = getScopeHints(moduleApiName);
 
   logDebug('lead.upsert.start', {
@@ -474,6 +779,15 @@ async function createZohoCrmLead(input) {
       throw error;
     }
 
+    await addTagsToRecord({
+      accessToken,
+      apiDomain,
+      apiVersion,
+      moduleApiName,
+      recordId: existingLead.id,
+      tags: recordTags,
+    });
+
     logDebug('lead.update.success', { id: existingLead.id });
     return updateResponse.data;
   }
@@ -516,7 +830,17 @@ async function createZohoCrmLead(input) {
     throw error;
   }
 
-  logDebug('lead.create.success', { id: createResult.details?.id || null });
+  const createdRecordId = createResult.details?.id || null;
+  await addTagsToRecord({
+    accessToken,
+    apiDomain,
+    apiVersion,
+    moduleApiName,
+    recordId: createdRecordId,
+    tags: recordTags,
+  });
+
+  logDebug('lead.create.success', { id: createdRecordId });
   return createResponse.data;
 }
 
