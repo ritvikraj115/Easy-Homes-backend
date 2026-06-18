@@ -644,6 +644,17 @@ function buildLeadPayload({
 
   const normalizedGoogleAdsAttribution = applyGoogleAdsAttributionFields(payload, googleAdsAttribution);
 
+  // =========================================================================
+  // EXPLICIT MAPPING FOR CUSTOM FIELDS: Ad_Campaign and Lead_Identifier
+  // =========================================================================
+  if (normalizedGoogleAdsAttribution?.gclid) {
+    payload.Lead_Identifier = normalizedGoogleAdsAttribution.gclid;
+  }
+  if (normalizedGoogleAdsAttribution?.campaignId) {
+    payload.Ad_Campaign = normalizedGoogleAdsAttribution.campaignId;
+  }
+  // =========================================================================
+
   const descriptionBits = [];
   if (project) descriptionBits.push(`Project: ${String(project).trim()}`);
   if (preferredDate) descriptionBits.push(`Preferred Date: ${String(preferredDate).trim()}`);
