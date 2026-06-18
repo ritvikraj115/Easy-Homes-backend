@@ -250,7 +250,7 @@ function applyGoogleAdsAttributionFields(payload, attribution) {
   setConfiguredFieldValue(payload, 'GCL_ID', normalizedAttribution.gclid);
   
   // Pushing campaignId directly to 'Ad_Campaign'
-  setConfiguredFieldValue(payload, 'GCampaignID', normalizedAttribution.campaignId);
+  setConfiguredFieldValue(payload, 'Campaign_Id', normalizedAttribution.campaignId);
   // ==========================================
 
   // (Optional) The rest remain mapped via env variables if you ever decide to use them, 
