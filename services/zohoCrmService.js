@@ -247,10 +247,10 @@ function applyGoogleAdsAttributionFields(payload, attribution) {
   // HARDCODED CUSTOM ZOHO FIELDS
   // ==========================================
   // Pushing gclid directly to 'Lead_Identifier'
-  setConfiguredFieldValue(payload, 'Lead_Identifier', normalizedAttribution.gclid);
+  setConfiguredFieldValue(payload, 'GCL_ID', normalizedAttribution.gclid);
   
   // Pushing campaignId directly to 'Ad_Campaign'
-  setConfiguredFieldValue(payload, 'Ad_Campaign', normalizedAttribution.campaignId);
+  setConfiguredFieldValue(payload, 'GCampaignID', normalizedAttribution.campaignId);
   // ==========================================
 
   // (Optional) The rest remain mapped via env variables if you ever decide to use them, 
@@ -647,12 +647,6 @@ function buildLeadPayload({
   // =========================================================================
   // EXPLICIT MAPPING FOR CUSTOM FIELDS: Ad_Campaign and Lead_Identifier
   // =========================================================================
-  if (normalizedGoogleAdsAttribution?.gclid) {
-    payload.Lead_identifier = normalizedGoogleAdsAttribution.gclid;
-  }
-  if (normalizedGoogleAdsAttribution?.campaignId) {
-    payload.Ad_Campaign1 = normalizedGoogleAdsAttribution.campaignId;
-  }
   // =========================================================================
 
   const descriptionBits = [];
