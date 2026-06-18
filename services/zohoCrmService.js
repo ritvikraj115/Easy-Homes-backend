@@ -648,10 +648,10 @@ function buildLeadPayload({
   // EXPLICIT MAPPING FOR CUSTOM FIELDS: Ad_Campaign and Lead_Identifier
   // =========================================================================
   if (normalizedGoogleAdsAttribution?.gclid) {
-    payload.Lead_Identifier = normalizedGoogleAdsAttribution.gclid;
+    payload.Lead_identifier = normalizedGoogleAdsAttribution.gclid;
   }
   if (normalizedGoogleAdsAttribution?.campaignId) {
-    payload.Ad_Campaign = normalizedGoogleAdsAttribution.campaignId;
+    payload.Ad_Campaign1 = normalizedGoogleAdsAttribution.campaignId;
   }
   // =========================================================================
 
