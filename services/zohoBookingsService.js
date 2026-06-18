@@ -289,9 +289,7 @@ function parsePickupAddress(pickupAddress, pickupLat, pickupLng) {
       addr_1: addressText,
       addr_2: '',
       city: '',
-      state: '',
-      country: 'India',
-      postal: ''
+      state: ''
     };
   }
 
@@ -300,9 +298,7 @@ function parsePickupAddress(pickupAddress, pickupLat, pickupLng) {
       addr_1: `Selected location near ${addressText}`,
       addr_2: '',
       city: '',
-      state: '',
-      country: 'India',
-      postal: ''
+      state: ''
     };
   }
 
@@ -327,8 +323,6 @@ function parsePickupAddress(pickupAddress, pickupLat, pickupLng) {
   let country = '';
   if (parts.length && /india|bharat/i.test(parts[parts.length - 1])) {
     country = parts.pop();
-  } else {
-    country = 'India';
   }
 
   const state = parts.length >= 2 ? parts.pop() : '';
@@ -336,29 +330,12 @@ function parsePickupAddress(pickupAddress, pickupLat, pickupLng) {
   const addr_1 = parts.length ? parts.shift() : addressText;
   const addr_2 = parts.length ? parts.join(', ') : '';
 
+  // RETURN ONLY THE FIELDS ENABLED IN THE ZOHO UI
   return {
     addr_1,
     addr_2,
     city,
-    state,
-    country,
-    postal: postalCode
-  };
-}
-
-function buildSelfArrivalPickupAddress() {
-  const summaryText = String(
-    process.env.ZOHO_BOOKINGS_SELF_ARRIVAL_PICKUP_TEXT ||
-    'Self-arrival - transport not required'
-  ).trim();
-
-  return {
-    addr_1: summaryText || 'Self-arrival - transport not required',
-    addr_2: '',
-    city: '',
-    state: '',
-    country: 'India',
-    postal: ''
+    state
   };
 }
 
@@ -391,22 +368,57 @@ function isCreateAppointmentFailure(returnValue) {
   return false;
 }
 
+function getPickupFieldType() {
+  return String(process.env.ZOHO_BOOKINGS_PICKUP_ADDRESS_FIELD_TYPE || 'address')
+    .trim()
+    .toLowerCase();
+}
+
+function formatPickupAddressText(pickupAddress, pickupLat, pickupLng) {
+  const rawText = String(pickupAddress || '').trim();
+  const fallbackFromCoordinates =
+    Number.isFinite(Number(pickupLat)) && Number.isFinite(Number(pickupLng))
+      ? `Selected location near ${Number(pickupLat).toFixed(6)}, ${Number(pickupLng).toFixed(6)}`
+      : null;
+
+  return (rawText || fallbackFromCoordinates || 'Pickup address not provided')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function buildAdditionalFields({ pickupAddress, pickupLat, pickupLng, transportRequired }) {
-  const pickupFieldKey = process.env.ZOHO_BOOKINGS_PICKUP_ADDRESS_FIELD || 'Pickup Address';
-  const transportFieldKey = process.env.ZOHO_BOOKINGS_TRANSPORT_FIELD || 'Need Transport';
+  // Strip accidental quotes from the .env variables just in case
+  const pickupFieldKey = String(process.env.ZOHO_BOOKINGS_PICKUP_ADDRESS_FIELD || 'Pickup Address').replace(/['"]/g, '').trim();
+  const transportFieldKey = String(process.env.ZOHO_BOOKINGS_TRANSPORT_FIELD || 'Need Transport').replace(/['"]/g, '').trim();
+  
   const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
   const fields = {};
 
-  if (transportFieldKey) {
-    fields[transportFieldKey] = normalizedTransportRequired;
+  if (transportFieldKey && normalizedTransportRequired === 'Yes') {
+    fields[transportFieldKey] = String(process.env.ZOHO_BOOKINGS_TRANSPORT_YES_VALUE || 'Yes').trim();
   }
 
+  // Address fields MUST be objects. 
+  // We ONLY pass 'addr_1'. By omitting 'city', 'state', etc., we bypass Zoho's strict picklist validation.
   if (normalizedTransportRequired === 'No') {
-    // Zoho Bookings can still enforce this custom field as mandatory at the service level.
-    fields[pickupFieldKey] = buildSelfArrivalPickupAddress();
-  } else if (pickupAddress || Number.isFinite(Number(pickupLat)) || Number.isFinite(Number(pickupLng))) {
-    // Official Zoho format for Address custom field type.
-    fields[pickupFieldKey] = parsePickupAddress(pickupAddress, pickupLat, pickupLng);
+    const selfArrivalText = String(
+      process.env.ZOHO_BOOKINGS_SELF_ARRIVAL_PICKUP_TEXT ||
+      'Self-arrival - transport not required'
+    ).trim();
+
+    fields[pickupFieldKey] = {
+      addr_1: selfArrivalText
+    };
+
+    return Object.keys(fields).length ? fields : null;
+  }
+
+  if (pickupAddress || Number.isFinite(Number(pickupLat)) || Number.isFinite(Number(pickupLng))) {
+    const addressText = formatPickupAddressText(pickupAddress, pickupLat, pickupLng);
+    
+    fields[pickupFieldKey] = {
+      addr_1: addressText
+    };
   }
 
   return Object.keys(fields).length ? fields : null;

@@ -169,6 +169,157 @@ function setConfiguredFieldValue(payload, fieldApiName, value) {
   payload[apiName] = normalizedValue;
 }
 
+function setPlatformSourceField(payload, platformSource) {
+  const fieldApiName = String(
+    process.env.ZOHO_CRM_PLATFORM_SOURCE_FIELD_API_NAME ||
+    'Platform_Source'
+  ).trim();
+  const normalizedValue = String(platformSource || 'Website').trim();
+
+  if (!fieldApiName || !normalizedValue) {
+    return;
+  }
+
+  payload[fieldApiName] = normalizedValue;
+}
+
+function normalizeAttributionValue(value) {
+  const text = String(value || '').trim();
+  return text || undefined;
+}
+
+function getPreferredGoogleClickId(attribution) {
+  if (!attribution) {
+    return undefined;
+  }
+
+  return attribution.gclid || attribution.gbraid || attribution.wbraid || undefined;
+}
+
+function normalizeGoogleAdsAttribution(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  const normalized = {
+    gclid: normalizeAttributionValue(raw.gclid),
+    gbraid: normalizeAttributionValue(raw.gbraid),
+    wbraid: normalizeAttributionValue(raw.wbraid),
+    campaignId: normalizeAttributionValue(raw.campaignId),
+    adGroupId: normalizeAttributionValue(raw.adGroupId),
+    creativeId: normalizeAttributionValue(raw.creativeId),
+    targetId: normalizeAttributionValue(raw.targetId),
+    device: normalizeAttributionValue(raw.device),
+    network: normalizeAttributionValue(raw.network),
+    matchType: normalizeAttributionValue(raw.matchType),
+    utmSource: normalizeAttributionValue(raw.utmSource),
+    utmMedium: normalizeAttributionValue(raw.utmMedium),
+    utmCampaign: normalizeAttributionValue(raw.utmCampaign),
+    utmTerm: normalizeAttributionValue(raw.utmTerm),
+    utmContent: normalizeAttributionValue(raw.utmContent),
+    landingPage: normalizeAttributionValue(raw.landingPage),
+    firstCapturedAt: normalizeAttributionValue(raw.firstCapturedAt),
+    lastCapturedAt: normalizeAttributionValue(raw.lastCapturedAt),
+  };
+
+  const clickIdType =
+    normalizeAttributionValue(raw.clickIdType) ||
+    (normalized.gclid ? 'gclid' : normalized.gbraid ? 'gbraid' : normalized.wbraid ? 'wbraid' : undefined);
+
+  if (clickIdType) {
+    normalized.clickIdType = clickIdType;
+    normalized.hasGoogleAdsClick = true;
+  }
+
+  const hasValues = Object.values(normalized).some((value) => value !== undefined && value !== null && value !== false);
+  return hasValues ? normalized : null;
+}
+
+function applyGoogleAdsAttributionFields(payload, attribution) {
+  const normalizedAttribution = normalizeGoogleAdsAttribution(attribution);
+  if (!normalizedAttribution) {
+    return null;
+  }
+
+  const googleLeadId = getPreferredGoogleClickId(normalizedAttribution);
+
+  // ==========================================
+  // HARDCODED CUSTOM ZOHO FIELDS
+  // ==========================================
+  // Pushing gclid directly to 'Lead_Identifier'
+  setConfiguredFieldValue(payload, 'Lead_Identifier', normalizedAttribution.gclid);
+  
+  // Pushing campaignId directly to 'Ad_Campaign'
+  setConfiguredFieldValue(payload, 'Ad_Campaign', normalizedAttribution.campaignId);
+  // ==========================================
+
+  // (Optional) The rest remain mapped via env variables if you ever decide to use them, 
+  // but you can safely delete any you aren't using in your Zoho setup.
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_LEAD_ID_FIELD_API_NAME,
+    googleLeadId,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_LEAD_ID_TYPE_FIELD_API_NAME,
+    normalizedAttribution.clickIdType,
+  );
+  setConfiguredFieldValue(payload, process.env.ZOHO_CRM_GBRAID_FIELD_API_NAME, normalizedAttribution.gbraid);
+  setConfiguredFieldValue(payload, process.env.ZOHO_CRM_WBRAID_FIELD_API_NAME, normalizedAttribution.wbraid);
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_ADGROUP_ID_FIELD_API_NAME,
+    normalizedAttribution.adGroupId,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_CREATIVE_ID_FIELD_API_NAME,
+    normalizedAttribution.creativeId,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_TARGET_ID_FIELD_API_NAME,
+    normalizedAttribution.targetId,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_DEVICE_FIELD_API_NAME,
+    normalizedAttribution.device,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_NETWORK_FIELD_API_NAME,
+    normalizedAttribution.network,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_MATCHTYPE_FIELD_API_NAME,
+    normalizedAttribution.matchType,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_UTM_SOURCE_FIELD_API_NAME,
+    normalizedAttribution.utmSource,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_UTM_MEDIUM_FIELD_API_NAME,
+    normalizedAttribution.utmMedium,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_UTM_CAMPAIGN_FIELD_API_NAME,
+    normalizedAttribution.utmCampaign,
+  );
+  setConfiguredFieldValue(
+    payload,
+    process.env.ZOHO_CRM_GOOGLE_ADS_LANDING_PAGE_FIELD_API_NAME,
+    normalizedAttribution.landingPage,
+  );
+
+  return normalizedAttribution;
+}
 function normalizeTags(tags) {
   if (!Array.isArray(tags)) {
     return [];
@@ -452,12 +603,15 @@ function buildLeadPayload({
   email,
   project,
   source,
+  platformSource,
+  platform_source,
   leadStatus,
   preferredDate,
   pickupAddress,
   requirements,
   notes,
   tags,
+  googleAdsAttribution,
 }) {
   const { firstName, lastName } = splitName(name);
   const company = String(
@@ -473,6 +627,8 @@ function buildLeadPayload({
     Mobile: String(phone || '').trim(),
   };
 
+  setPlatformSourceField(payload, platformSource || platform_source || 'Website');
+
   if (firstName) payload.First_Name = firstName;
   if (email) payload.Email = String(email).trim();
   if (leadStatus) payload.Lead_Status = String(leadStatus).trim();
@@ -486,12 +642,56 @@ function buildLeadPayload({
     );
   }
 
+  const normalizedGoogleAdsAttribution = applyGoogleAdsAttributionFields(payload, googleAdsAttribution);
+
   const descriptionBits = [];
   if (project) descriptionBits.push(`Project: ${String(project).trim()}`);
   if (preferredDate) descriptionBits.push(`Preferred Date: ${String(preferredDate).trim()}`);
   if (pickupAddress) descriptionBits.push(`Pickup Address: ${String(pickupAddress).trim()}`);
   if (normalizedRequirements) descriptionBits.push(`Requirements: ${normalizedRequirements}`);
   if (notes) descriptionBits.push(`Notes: ${String(notes).trim()}`);
+  if (normalizedGoogleAdsAttribution?.clickIdType) {
+    descriptionBits.push(`Google Ads Click ID Type: ${normalizedGoogleAdsAttribution.clickIdType}`);
+  }
+  if (normalizedGoogleAdsAttribution?.gclid) {
+    descriptionBits.push(`GCLID: ${normalizedGoogleAdsAttribution.gclid}`);
+  }
+  if (normalizedGoogleAdsAttribution?.gbraid) {
+    descriptionBits.push(`GBRAID: ${normalizedGoogleAdsAttribution.gbraid}`);
+  }
+  if (normalizedGoogleAdsAttribution?.wbraid) {
+    descriptionBits.push(`WBRAID: ${normalizedGoogleAdsAttribution.wbraid}`);
+  }
+  if (normalizedGoogleAdsAttribution?.campaignId) {
+    descriptionBits.push(`Google Ads Campaign ID: ${normalizedGoogleAdsAttribution.campaignId}`);
+  }
+  if (normalizedGoogleAdsAttribution?.adGroupId) {
+    descriptionBits.push(`Google Ads Ad Group ID: ${normalizedGoogleAdsAttribution.adGroupId}`);
+  }
+  if (normalizedGoogleAdsAttribution?.creativeId) {
+    descriptionBits.push(`Google Ads Creative ID: ${normalizedGoogleAdsAttribution.creativeId}`);
+  }
+  if (normalizedGoogleAdsAttribution?.targetId) {
+    descriptionBits.push(`Google Ads Target ID: ${normalizedGoogleAdsAttribution.targetId}`);
+  }
+  if (normalizedGoogleAdsAttribution?.device) {
+    descriptionBits.push(`Google Ads Device: ${normalizedGoogleAdsAttribution.device}`);
+  }
+  if (normalizedGoogleAdsAttribution?.network) {
+    descriptionBits.push(`Google Ads Network: ${normalizedGoogleAdsAttribution.network}`);
+  }
+  if (normalizedGoogleAdsAttribution?.matchType) {
+    descriptionBits.push(`Google Ads Match Type: ${normalizedGoogleAdsAttribution.matchType}`);
+  }
+  if (normalizedGoogleAdsAttribution?.utmCampaign) {
+    descriptionBits.push(`UTM Campaign: ${normalizedGoogleAdsAttribution.utmCampaign}`);
+  }
+  if (normalizedGoogleAdsAttribution?.landingPage) {
+    descriptionBits.push(`Landing Page: ${normalizedGoogleAdsAttribution.landingPage}`);
+  }
+  if (normalizedGoogleAdsAttribution?.firstCapturedAt) {
+    descriptionBits.push(`Attribution Captured At: ${normalizedGoogleAdsAttribution.firstCapturedAt}`);
+  }
   if (descriptionBits.length) payload.Description = descriptionBits.join('\n');
   payload.__normalizedTags = normalizeTags(tags);
 

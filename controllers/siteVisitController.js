@@ -1,4 +1,4 @@
-const SiteVisit = require('../models/siteVisitModel');
+﻿const SiteVisit = require('../models/siteVisitModel');
 const sendMail = require('../utils/sendMail');
 const { sendSiteVisitTemplate, sendFreeTextMessage } = require('../services/whatsappService');
 const { createZohoAppointment } = require('../services/zohoBookingsService');
@@ -106,7 +106,10 @@ async function processSiteVisitPostProcessing(job) {
     pickupAddress,
     pickupMode,
     pickupLat,
-    pickupLng
+    pickupLng,
+    googleAdsAttribution,
+    platformSource,
+    platform_source,
   } = job;
 
   const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
@@ -201,12 +204,14 @@ async function processSiteVisitPostProcessing(job) {
     const crmResponse = await createZohoCrmLead({
       project,
       source: 'Website',
+      platformSource: platformSource || platform_source || 'Website',
       leadStatus: 'Visit Scheduled',
       name,
       phone,
       email,
       preferredDate,
       pickupAddress: normalizedPickupAddress,
+      googleAdsAttribution,
       notes: crmNotes,
     });
     zohoDebug('crm.done', { visitId, synced: Boolean(crmResponse) });
@@ -240,7 +245,10 @@ exports.create = async (req, res, next) => {
       pickupAddress,
       pickupMode,
       pickupLat,
-      pickupLng
+      pickupLng,
+      googleAdsAttribution,
+      platformSource,
+      platform_source,
     } = req.body || {};
     const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
     const {
@@ -265,15 +273,22 @@ exports.create = async (req, res, next) => {
       transportRequired: normalizedTransportRequired,
       hasNotes: Boolean(notes),
       hasPickupAddress: Boolean(normalizedPickupAddress),
-      pickupMode: normalizedPickupMode || null
+      pickupMode: normalizedPickupMode || null,
+      hasGoogleAdsAttribution: Boolean(googleAdsAttribution)
     });
+
+    const normalizedProject = String(project || '').trim().toLowerCase();
+    const scopedProjects = getZohoProjectScope();
+    const syncsToZohoBookings = scopedProjects ? scopedProjects.includes(normalizedProject) : normalizedProject === 'kalpavruksha';
 
     if (!name || !phone || !preferredDate) {
       return res.status(400).json({ success: false, message: 'name, phone, preferredDate are required' });
     }
 
-    const normalizedProject = String(project || '').trim().toLowerCase();
-    const scopedProjects = getZohoProjectScope();
+    if (syncsToZohoBookings && !String(email || '').trim()) {
+      return res.status(400).json({ success: false, message: 'email is required for site visit booking' });
+    }
+
     const requiresPickupAddress = scopedProjects ? scopedProjects.includes(normalizedProject) : normalizedProject === 'kalpavruksha';
     if (normalizedTransportRequired === 'Yes' && requiresPickupAddress && !normalizedPickupAddress) {
       return res.status(400).json({ success: false, message: 'pickupAddress is required' });
@@ -290,7 +305,9 @@ exports.create = async (req, res, next) => {
       pickupMode: normalizedPickupMode,
       pickupLat: normalizedPickupLat,
       pickupLng: normalizedPickupLng,
-      notes
+      notes,
+      platformSource: 'Website',
+      platform_source: 'Website'
     });
     const visitId = String(visit?._id || '');
     zohoDebug('create.saved', { visitId, asyncProcessing: true });
@@ -304,10 +321,12 @@ exports.create = async (req, res, next) => {
       preferredDate,
       transportRequired: normalizedTransportRequired,
       notes,
+      googleAdsAttribution,
       pickupAddress: normalizedPickupAddress,
       pickupMode: normalizedPickupMode,
       pickupLat: normalizedPickupLat,
-      pickupLng: normalizedPickupLng
+      pickupLng: normalizedPickupLng,
+      platformSource: platformSource || platform_source || 'Website'
     });
 
     return res.status(201).json({

@@ -34,7 +34,10 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
       email,
       requirements,
       placement,
+      platformSource,
+      platform_source,
       leadStatus,
+      googleAdsAttribution,
     } = req.body || {};
     const source = 'Website';
 
@@ -49,11 +52,13 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
       await createZohoCrmLead({
         project,
         source,
+        platformSource: normalizeText(platformSource) || normalizeText(platform_source) || 'Website',
         leadStatus: resolveWebsiteEnquiryLeadStatus(leadStatus),
         name,
         phone,
         email: normalizeText(email),
         requirements: normalizeText(requirements),
+        googleAdsAttribution,
         notes: buildWebsiteEnquiryNotes({
           placement: normalizeText(placement),
         }),
@@ -79,11 +84,14 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
     const {
       project = 'Kalpavruksha',
       source: rawSource,
+      platformSource,
+      platform_source,
       leadStatus,
       name,
       phone,
       email,
       notes,
+      googleAdsAttribution,
     } = req.body || {};
     const source = 'Website';
 
@@ -102,10 +110,12 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
       await createZohoCrmLead({
         project,
         source,
+        platformSource: normalizeText(platformSource) || normalizeText(platform_source) || 'Website',
         leadStatus: resolvedLeadStatus || undefined,
         name,
         phone,
         email,
+        googleAdsAttribution,
         notes,
       });
     } catch (crmError) {
