@@ -1,4 +1,5 @@
 const { createZohoCrmLead, isZohoCrmStrictMode } = require('../services/zohoCrmService');
+const { createZohoAppointment, getZohoAvailableSlots } = require('../services/zohoBookingsService');
 
 function inferDownloadLeadStatus(rawValue) {
   const text = String(rawValue || '').trim().toLowerCase();

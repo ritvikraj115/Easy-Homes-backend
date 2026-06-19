@@ -578,7 +578,68 @@ async function createZohoAppointment({
     throw error;
   }
 }
+// Add this new function above module.exports
+async function getZohoAvailableSlots({ preferredDate }) {
+  if (!isEnabled()) return [];
+  ensureConfig();
 
+  try {
+    const { accessToken, apiDomain } = await getAccessToken();
+    const timeZone = process.env.ZOHO_BOOKINGS_TIMEZONE;
+
+    // Zoho Bookings availableslots API requires date in dd-MMM-yyyy format
+    const dateObj = new Date(preferredDate);
+    if (Number.isNaN(dateObj.getTime())) return [];
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || undefined,
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit'
+    });
+    
+    const parts = formatter.formatToParts(dateObj);
+    const lookup = parts.reduce((acc, part) => {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+    
+    const selectedDate = `${lookup.day}-${lookup.month}-${lookup.year}`;
+    const serviceId = process.env.ZOHO_BOOKINGS_SERVICE_ID;
+    
+    const params = new URLSearchParams({
+      service_id: serviceId,
+      selected_date: selectedDate
+    });
+
+    if (process.env.ZOHO_BOOKINGS_STAFF_ID) {
+      params.append('staff_id', process.env.ZOHO_BOOKINGS_STAFF_ID);
+    } else if (process.env.ZOHO_BOOKINGS_RESOURCE_ID) {
+      params.append('resource_id', process.env.ZOHO_BOOKINGS_RESOURCE_ID);
+    } else if (process.env.ZOHO_BOOKINGS_GROUP_ID) {
+      params.append('group_id', process.env.ZOHO_BOOKINGS_GROUP_ID);
+    }
+
+    const url = `${String(apiDomain).replace(/\/$/, '')}/bookings/v1/json/availableslots?${params.toString()}`;
+    
+    const response = await axios.get(url, {
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+      timeout: 15000
+    });
+
+    const status = String(response.data?.response?.status || '').toLowerCase();
+    if (status !== 'success') return [];
+
+    const slots = response.data?.response?.returnvalue?.data || [];
+    return Array.isArray(slots) ? slots : [];
+  } catch (error) {
+    console.error(`${DEBUG_PREFIX} availableslots.failed ${error.message}`);
+    return [];
+  }
+}
+
+// Update your module.exports to expose the new function
 module.exports = {
-  createZohoAppointment
+  createZohoAppointment,
+  getZohoAvailableSlots
 };

@@ -1,8 +1,8 @@
 ﻿const SiteVisit = require('../models/siteVisitModel');
 const sendMail = require('../utils/sendMail');
 const { sendSiteVisitTemplate, sendFreeTextMessage } = require('../services/whatsappService');
-const { createZohoAppointment } = require('../services/zohoBookingsService');
 const { createZohoCrmLead, isZohoCrmStrictMode } = require('../services/zohoCrmService');
+const { createZohoAppointment, getZohoAvailableSlots } = require('../services/zohoBookingsService');
 
 function isZohoDebugEnabled() {
   const value = String(process.env.ZOHO_BOOKINGS_DEBUG || '').toLowerCase();
@@ -176,20 +176,66 @@ async function processSiteVisitPostProcessing(job) {
   }
 
   zohoDebug('zoho.start', { visitId });
-  const zohoResponse = await createZohoAppointment({
-    project,
-    name,
-    phone,
-    email,
-    preferredDate,
-    transportRequired: normalizedTransportRequired,
-    pickupAddress: normalizedPickupAddress,
-    pickupMode: normalizedPickupMode,
-    pickupLat: normalizedPickupLat,
-    pickupLng: normalizedPickupLng,
-    notes
-  });
-  zohoDebug('zoho.done', { visitId, zohoResponse });
+  let zohoResponse = null;
+  try {
+    zohoResponse = await createZohoAppointment({
+      project,
+      name,
+      phone,
+      email,
+      preferredDate,
+      transportRequired: normalizedTransportRequired,
+      pickupAddress: normalizedPickupAddress,
+      pickupMode: normalizedPickupMode,
+      pickupLat: normalizedPickupLat,
+      pickupLng: normalizedPickupLng,
+      notes
+    });
+    zohoDebug('zoho.done', { visitId, zohoResponse });
+  } catch (zohoError) {
+    zohoDebug('zoho.appointment.failed', { visitId, error: zohoError.message });
+
+    const failReason = zohoError.details?.message || zohoError.message || 'Unknown error occurred while syncing with Zoho Bookings.';
+    const isSlotError = /(slot not found|not available|mandatory|invalid|service not found)/i.test(failReason);
+
+    let slotSuggestionText = '';
+
+    // If the error was related to slot unavailability, query the official API for available times
+    if (isSlotError) {
+      const availableSlots = await getZohoAvailableSlots({ preferredDate });
+      if (availableSlots && availableSlots.length > 0) {
+        slotSuggestionText = `\n\nAvailable time slots for your selected date:\n${availableSlots.join(', ')}\n\nPlease reply to this email or contact us to secure one of these times.`;
+      } else {
+        slotSuggestionText = `\n\nUnfortunately, no alternative time slots are available on this date. Please contact us to choose a different day.`;
+      }
+    }
+
+    const failSubject = `Site Visit Booking Issue - ${project}`;
+    const OWNER_EMAIL = 'santhibushan.p@easyhomess.com';
+
+    // 1. Send failure notice + slots to User
+    if (email) {
+      const failUserMsg = `Hi ${name},\n\nWe attempted to schedule your site visit for ${project} on ${dateStr}, but encountered an issue with our booking schedule.\n\nReason: ${failReason}${slotSuggestionText}\n\nOur team will also manually follow up with you shortly to assist.\n\n- Easy Homes`;
+
+      sendMail({
+        to: email,
+        subject: failSubject,
+        text: failUserMsg,
+        html: failUserMsg.replace(/\n/g, '<br/>')
+      }).catch(err => console.error('[site-visit] Failed to send user booking error email:', err.message));
+    }
+
+    // 2. Send failure notice to Owner
+    const failOwnerMsg = `Alert: A Site Visit booking failed to sync with Zoho Bookings.\n\nProject: ${project}\nCustomer: ${name}\nPhone: ${phone}\nEmail: ${email || '-'}\nPreferred Date: ${dateStr}\n\nFailure Reason: ${failReason}\n\nPlease reach out to the customer manually to confirm their visit.`;
+
+    sendMail({
+      to: OWNER_EMAIL,
+      subject: `[ACTION REQUIRED] ${failSubject}`,
+      text: failOwnerMsg,
+      html: failOwnerMsg.replace(/\n/g, '<br/>')
+    }).catch(err => console.error('[site-visit] Failed to send owner booking error email:', err.message));
+    return;
+  }
 
   try {
     const crmNotes = [
@@ -291,9 +337,9 @@ exports.create = async (req, res, next) => {
     const phoneStr = String(phone).trim();
     const phoneRegex = /^\d{10}$/; // Matches exactly 10 digits (0-9)
     if (!phoneRegex.test(phoneStr)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Phone number must be strictly 10 digits.' 
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be strictly 10 digits.'
       });
     }
     // =========================================================================
