@@ -106,6 +106,19 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
       });
     }
 
+    // =========================================================================
+    // STRICT 10-DIGIT PHONE VALIDATION
+    // =========================================================================
+    const phoneStr = String(phone).trim();
+    const phoneRegex = /^\d{10}$/; // Matches exactly 10 digits
+    if (!phoneRegex.test(phoneStr)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number must be strictly 10 digits.' 
+      });
+    }
+    // =========================================================================
+
     try {
       await createZohoCrmLead({
         project,
@@ -113,7 +126,7 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
         platformSource: normalizeText(platformSource) || normalizeText(platform_source) || 'Website',
         leadStatus: resolvedLeadStatus || undefined,
         name,
-        phone,
+        phone: phoneStr, // <--- Send the clean, validated string to Zoho
         email,
         googleAdsAttribution,
         notes,

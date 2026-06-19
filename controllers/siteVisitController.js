@@ -231,7 +231,6 @@ async function processSiteVisitPostProcessing(job) {
   await sendSiteVisitTemplate(phone, dateStr);
   // await sendFreeTextMessage(phone, userMsg);
 }
-
 exports.create = async (req, res, next) => {
   try {
     const {
@@ -281,9 +280,23 @@ exports.create = async (req, res, next) => {
     const scopedProjects = getZohoProjectScope();
     const syncsToZohoBookings = scopedProjects ? scopedProjects.includes(normalizedProject) : normalizedProject === 'kalpavruksha';
 
+    // 1. Basic Required Fields Check
     if (!name || !phone || !preferredDate) {
       return res.status(400).json({ success: false, message: 'name, phone, preferredDate are required' });
     }
+
+    // =========================================================================
+    // 2. STRICT 10-DIGIT PHONE VALIDATION
+    // =========================================================================
+    const phoneStr = String(phone).trim();
+    const phoneRegex = /^\d{10}$/; // Matches exactly 10 digits (0-9)
+    if (!phoneRegex.test(phoneStr)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number must be strictly 10 digits.' 
+      });
+    }
+    // =========================================================================
 
     if (syncsToZohoBookings && !String(email || '').trim()) {
       return res.status(400).json({ success: false, message: 'email is required for site visit booking' });
@@ -297,7 +310,7 @@ exports.create = async (req, res, next) => {
     const visit = await SiteVisit.create({
       project,
       name,
-      phone,
+      phone: phoneStr, // Saving the trimmed 10-digit string
       email,
       preferredDate,
       transportRequired: normalizedTransportRequired,
@@ -316,7 +329,7 @@ exports.create = async (req, res, next) => {
       visitId,
       project,
       name,
-      phone,
+      phone: phoneStr,
       email,
       preferredDate,
       transportRequired: normalizedTransportRequired,

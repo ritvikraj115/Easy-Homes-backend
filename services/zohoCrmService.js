@@ -632,6 +632,7 @@ function buildLeadPayload({
   if (firstName) payload.First_Name = firstName;
   if (email) payload.Email = String(email).trim();
   if (leadStatus) payload.Lead_Status = String(leadStatus).trim();
+  payload.Leads_Owner='unassigned';
 
   const normalizedRequirements = String(requirements || '').trim();
   if (normalizedRequirements) {
