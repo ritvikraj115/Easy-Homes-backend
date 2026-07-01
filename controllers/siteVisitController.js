@@ -47,6 +47,22 @@ function normalizeTransportRequired(value) {
   return 'Yes';
 }
 
+function normalizeLandingVariant(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'a' || normalized === 'lp_a' || normalized === 'v1') return 'A';
+  if (normalized === 'b' || normalized === 'lp_b' || normalized === 'v2') return 'B';
+  return undefined;
+}
+
+function normalizeLandingVersion(value, variant) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'v1' || normalized === 'version_1') return 'v1';
+  if (normalized === 'v2' || normalized === 'version_2') return 'v2';
+  if (variant === 'A') return 'v1';
+  if (variant === 'B') return 'v2';
+  return undefined;
+}
+
 function normalizeOptionalValue(value) {
   if (value === undefined || value === null || value === '') return undefined;
   return value;
@@ -110,7 +126,14 @@ async function processSiteVisitPostProcessing(job) {
     googleAdsAttribution,
     platformSource,
     platform_source,
+    landingVariant,
+    landing_variant,
+    landingVersion,
+    landing_version,
+    version,
   } = job;
+  const normalizedLandingVariant = normalizeLandingVariant(landingVariant || landing_variant);
+  const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
 
   const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
   const {
@@ -136,6 +159,9 @@ async function processSiteVisitPostProcessing(job) {
     `Preferred: ${dateStr}`,
     `Transport Required: ${normalizedTransportRequired}`,
   ];
+  if (normalizedLandingVariant || normalizedLandingVersion) {
+    adminLines.push(`Landing Version: ${normalizedLandingVersion || '-'} (${normalizedLandingVariant || '-'})`);
+  }
   if (normalizedTransportRequired === 'Yes') {
     adminLines.push(`Pickup Address: ${normalizedPickupAddress || '-'}`);
     adminLines.push(`Pickup Mode: ${normalizedPickupMode || '-'}`);
@@ -257,6 +283,9 @@ async function processSiteVisitPostProcessing(job) {
       email,
       preferredDate,
       pickupAddress: normalizedPickupAddress,
+      landingVariant: normalizedLandingVariant,
+      landingVersion: normalizedLandingVersion,
+      version: normalizedLandingVersion,
       googleAdsAttribution,
       notes: crmNotes,
     });
@@ -294,7 +323,14 @@ exports.create = async (req, res, next) => {
       googleAdsAttribution,
       platformSource,
       platform_source,
+      landingVariant,
+      landing_variant,
+      landingVersion,
+      landing_version,
+      version,
     } = req.body || {};
+    const normalizedLandingVariant = normalizeLandingVariant(landingVariant || landing_variant);
+    const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
     const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
     const {
       pickupAddress: normalizedPickupAddress,
@@ -319,6 +355,8 @@ exports.create = async (req, res, next) => {
       hasNotes: Boolean(notes),
       hasPickupAddress: Boolean(normalizedPickupAddress),
       pickupMode: normalizedPickupMode || null,
+      landingVariant: normalizedLandingVariant || null,
+      landingVersion: normalizedLandingVersion || null,
       hasGoogleAdsAttribution: Boolean(googleAdsAttribution)
     });
 
@@ -344,9 +382,10 @@ exports.create = async (req, res, next) => {
     }
     // =========================================================================
 
-    if (syncsToZohoBookings && !String(email || '').trim()) {
-      return res.status(400).json({ success: false, message: 'email is required for site visit booking' });
-    }
+    const normalizedEmail = String(email || '').trim();
+    const bookingEmail = syncsToZohoBookings && !normalizedEmail
+      ? `${phoneStr}@easyhomess.com`
+      : normalizedEmail;
 
     const requiresPickupAddress = scopedProjects ? scopedProjects.includes(normalizedProject) : normalizedProject === 'kalpavruksha';
     if (normalizedTransportRequired === 'Yes' && requiresPickupAddress && !normalizedPickupAddress) {
@@ -357,7 +396,7 @@ exports.create = async (req, res, next) => {
       project,
       name,
       phone: phoneStr, // Saving the trimmed 10-digit string
-      email,
+      email: bookingEmail || undefined,
       preferredDate,
       transportRequired: normalizedTransportRequired,
       pickupAddress: normalizedPickupAddress,
@@ -365,8 +404,13 @@ exports.create = async (req, res, next) => {
       pickupLat: normalizedPickupLat,
       pickupLng: normalizedPickupLng,
       notes,
-      platformSource: 'Website',
-      platform_source: 'Website'
+      platformSource: platformSource || platform_source || 'Website',
+      platform_source: platformSource || platform_source || 'Website',
+      landingVariant: normalizedLandingVariant,
+      landing_variant: normalizedLandingVariant,
+      landingVersion: normalizedLandingVersion,
+      landing_version: normalizedLandingVersion,
+      version: normalizedLandingVersion
     });
     const visitId = String(visit?._id || '');
     zohoDebug('create.saved', { visitId, asyncProcessing: true });
@@ -376,7 +420,7 @@ exports.create = async (req, res, next) => {
       project,
       name,
       phone: phoneStr,
-      email,
+      email: bookingEmail || undefined,
       preferredDate,
       transportRequired: normalizedTransportRequired,
       notes,
@@ -385,7 +429,12 @@ exports.create = async (req, res, next) => {
       pickupMode: normalizedPickupMode,
       pickupLat: normalizedPickupLat,
       pickupLng: normalizedPickupLng,
-      platformSource: platformSource || platform_source || 'Website'
+      platformSource: platformSource || platform_source || 'Website',
+      landingVariant: normalizedLandingVariant,
+      landing_variant: normalizedLandingVariant,
+      landingVersion: normalizedLandingVersion,
+      landing_version: normalizedLandingVersion,
+      version: normalizedLandingVersion
     });
 
     return res.status(201).json({
@@ -402,5 +451,25 @@ exports.create = async (req, res, next) => {
       details: err.details || null
     });
     next(err);
+  }
+};
+
+exports.getAvailableSlots = async (req, res, next) => {
+  try {
+    const preferredDate = req.query.preferredDate || req.query.date;
+    if (!preferredDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'preferredDate is required',
+      });
+    }
+
+    const slots = await getZohoAvailableSlots({ preferredDate });
+    return res.json({
+      success: true,
+      slots,
+    });
+  } catch (err) {
+    return next(err);
   }
 };

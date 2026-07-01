@@ -13,6 +13,13 @@ const SiteVisitSchema = new mongoose.Schema(
     pickupLat: { type: Number },
     pickupLng: { type: Number },
     notes: { type: String },
+    platformSource: { type: String },
+    platform_source: { type: String },
+    landingVariant: { type: String },
+    landing_variant: { type: String },
+    landingVersion: { type: String },
+    landing_version: { type: String },
+    version: { type: String },
     status: { type: String, enum: ['requested', 'confirmed', 'cancelled'], default: 'requested' }
   },
   { timestamps: true }

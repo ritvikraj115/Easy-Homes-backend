@@ -14,12 +14,42 @@ function normalizeText(value) {
   return text || undefined;
 }
 
-function buildWebsiteEnquiryNotes({ placement }) {
+function normalizeLandingVariant(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'a' || normalized === 'lp_a' || normalized === 'v1') return 'A';
+  if (normalized === 'b' || normalized === 'lp_b' || normalized === 'v2') return 'B';
+  return undefined;
+}
+
+function normalizeLandingVersion(value, variant) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'v1' || normalized === 'version_1') return 'v1';
+  if (normalized === 'v2' || normalized === 'version_2') return 'v2';
+  if (variant === 'A') return 'v1';
+  if (variant === 'B') return 'v2';
+  return undefined;
+}
+
+function appendLandingVariantNotes(noteLines, { landingVariant, landingVersion } = {}) {
+  if (landingVersion || landingVariant) {
+    noteLines.push(`Landing Version: ${landingVersion || '-'} (${landingVariant || '-'})`);
+  }
+  return noteLines;
+}
+
+function buildWebsiteEnquiryNotes({ placement, landingVariant, landingVersion }) {
   const noteLines = ['Lead event: Website enquiry / callback request'];
   if (placement) {
     noteLines.push(`Form placement: ${placement}`);
   }
-  return noteLines.join('\n');
+  return appendLandingVariantNotes(noteLines, { landingVariant, landingVersion }).join('\n');
+}
+
+function buildDownloadLeadNotes({ notes, landingVariant, landingVersion }) {
+  const noteLines = [];
+  if (notes) noteLines.push(String(notes).trim());
+  appendLandingVariantNotes(noteLines, { landingVariant, landingVersion });
+  return noteLines.join('\n') || undefined;
 }
 
 function resolveWebsiteEnquiryLeadStatus(rawValue) {
@@ -38,9 +68,16 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
       platformSource,
       platform_source,
       leadStatus,
+      landingVariant,
+      landing_variant,
+      landingVersion,
+      landing_version,
+      version,
       googleAdsAttribution,
     } = req.body || {};
     const source = 'Website';
+    const normalizedLandingVariant = normalizeLandingVariant(landingVariant || landing_variant);
+    const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
 
     if (!name || !phone) {
       return res.status(400).json({
@@ -59,9 +96,14 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
         phone,
         email: normalizeText(email),
         requirements: normalizeText(requirements),
+        landingVariant: normalizedLandingVariant,
+        landingVersion: normalizedLandingVersion,
+        version: normalizedLandingVersion,
         googleAdsAttribution,
         notes: buildWebsiteEnquiryNotes({
           placement: normalizeText(placement),
+          landingVariant: normalizedLandingVariant,
+          landingVersion: normalizedLandingVersion,
         }),
       });
     } catch (crmError) {
@@ -88,6 +130,11 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
       platformSource,
       platform_source,
       leadStatus,
+      landingVariant,
+      landing_variant,
+      landingVersion,
+      landing_version,
+      version,
       name,
       phone,
       email,
@@ -95,6 +142,8 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
       googleAdsAttribution,
     } = req.body || {};
     const source = 'Website';
+    const normalizedLandingVariant = normalizeLandingVariant(landingVariant || landing_variant);
+    const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
 
     const resolvedLeadStatus =
       String(leadStatus || '').trim() ||
@@ -129,8 +178,15 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
         name,
         phone: phoneStr, // <--- Send the clean, validated string to Zoho
         email,
+        landingVariant: normalizedLandingVariant,
+        landingVersion: normalizedLandingVersion,
+        version: normalizedLandingVersion,
         googleAdsAttribution,
-        notes,
+        notes: buildDownloadLeadNotes({
+          notes: normalizeText(notes),
+          landingVariant: normalizedLandingVariant,
+          landingVersion: normalizedLandingVersion,
+        }),
       });
     } catch (crmError) {
       console.error('[lead] crm.sync.failed', crmError.message);

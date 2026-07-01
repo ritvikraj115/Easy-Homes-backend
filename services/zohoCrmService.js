@@ -183,6 +183,20 @@ function setPlatformSourceField(payload, platformSource) {
   payload[fieldApiName] = normalizedValue;
 }
 
+function setWebsiteVersionField(payload, landingVersion) {
+  const fieldApiName = String(
+    process.env.ZOHO_CRM_VERSION_FIELD_API_NAME ||
+    'Version'
+  ).trim();
+  const normalizedValue = String(landingVersion || '').trim();
+
+  if (!fieldApiName || !normalizedValue) {
+    return;
+  }
+
+  payload[fieldApiName] = normalizedValue;
+}
+
 function normalizeAttributionValue(value) {
   const text = String(value || '').trim();
   return text || undefined;
@@ -606,6 +620,11 @@ function buildLeadPayload({
   platformSource,
   platform_source,
   leadStatus,
+  landingVariant,
+  landing_variant,
+  landingVersion,
+  landing_version,
+  version,
   preferredDate,
   pickupAddress,
   requirements,
@@ -644,6 +663,9 @@ function buildLeadPayload({
   }
 
   const normalizedGoogleAdsAttribution = applyGoogleAdsAttributionFields(payload, googleAdsAttribution);
+  const normalizedLandingVariant = String(landingVariant || landing_variant || '').trim();
+  const normalizedLandingVersion = String(landingVersion || landing_version || version || '').trim();
+  setWebsiteVersionField(payload, normalizedLandingVersion);
 
   // =========================================================================
   // EXPLICIT MAPPING FOR CUSTOM FIELDS: Ad_Campaign and Lead_Identifier
@@ -652,6 +674,9 @@ function buildLeadPayload({
 
   const descriptionBits = [];
   if (project) descriptionBits.push(`Project: ${String(project).trim()}`);
+  if (normalizedLandingVariant || normalizedLandingVersion) {
+    descriptionBits.push(`Landing Version: ${normalizedLandingVersion || '-'} (${normalizedLandingVariant || '-'})`);
+  }
   if (preferredDate) descriptionBits.push(`Preferred Date: ${String(preferredDate).trim()}`);
   if (pickupAddress) descriptionBits.push(`Pickup Address: ${String(pickupAddress).trim()}`);
   if (normalizedRequirements) descriptionBits.push(`Requirements: ${normalizedRequirements}`);

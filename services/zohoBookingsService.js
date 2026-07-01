@@ -117,6 +117,70 @@ function pad2(value) {
   return String(value).padStart(2, '0');
 }
 
+function getDatePartsForTimeZone(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || undefined,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const parts = formatter.formatToParts(date);
+  return parts.reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+}
+
+function getTimePartsForTimeZone(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  return parts.reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+}
+
+function parseSlotMinutes(rawSlot) {
+  const text = String(rawSlot || '').trim();
+  const match = /^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$/i.exec(text);
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = match[3]?.toUpperCase();
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+
+  if (meridiem === 'PM' && hours < 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return (hours * 60) + minutes;
+}
+
+function filterPastSlotsForSelectedDate(slots, preferredDate, timeZone) {
+  const selectedDate = String(preferredDate || '').slice(0, 10);
+  if (!selectedDate || !Array.isArray(slots)) return [];
+
+  const now = new Date();
+  const todayParts = getDatePartsForTimeZone(now, timeZone);
+  const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+  if (selectedDate !== today) {
+    return slots;
+  }
+
+  const timeParts = getTimePartsForTimeZone(now, timeZone);
+  const currentMinutes = (Number(timeParts.hour) * 60) + Number(timeParts.minute);
+  return slots.filter((slot) => {
+    const slotMinutes = parseSlotMinutes(slot);
+    return slotMinutes === null || slotMinutes > currentMinutes;
+  });
+}
+
 function formatZohoDateTime(preferredDate, timeZone) {
   if (!preferredDate) {
     throw new Error('preferredDate is required to create a Zoho appointment');
@@ -631,7 +695,7 @@ async function getZohoAvailableSlots({ preferredDate }) {
     if (status !== 'success') return [];
 
     const slots = response.data?.response?.returnvalue?.data || [];
-    return Array.isArray(slots) ? slots : [];
+    return filterPastSlotsForSelectedDate(Array.isArray(slots) ? slots : [], preferredDate, timeZone);
   } catch (error) {
     console.error(`${DEBUG_PREFIX} availableslots.failed ${error.message}`);
     return [];
