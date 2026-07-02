@@ -14,6 +14,10 @@ function normalizeText(value) {
   return text || undefined;
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || '').trim());
+}
+
 function normalizeLandingVariant(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'a' || normalized === 'lp_a' || normalized === 'v1') return 'A';
@@ -79,10 +83,19 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
     const normalizedLandingVariant = normalizeLandingVariant(landingVariant || landing_variant);
     const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
 
+    const normalizedEmail = normalizeText(email);
+
     if (!name || !phone) {
       return res.status(400).json({
         success: false,
         message: 'name and phone are required',
+      });
+    }
+
+    if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email address is required',
       });
     }
 
@@ -94,7 +107,7 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
         leadStatus: resolveWebsiteEnquiryLeadStatus(leadStatus),
         name,
         phone,
-        email: normalizeText(email),
+        email: normalizedEmail,
         requirements: normalizeText(requirements),
         landingVariant: normalizedLandingVariant,
         landingVersion: normalizedLandingVersion,
@@ -148,11 +161,12 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
     const resolvedLeadStatus =
       String(leadStatus || '').trim() ||
       inferDownloadLeadStatus(rawSource);
+    const normalizedEmail = normalizeText(email);
 
-    if (!name || !phone) {
+    if (!name || !phone || !normalizedEmail) {
       return res.status(400).json({
         success: false,
-        message: 'name and phone are required',
+        message: 'name, phone and email are required',
       });
     }
 
@@ -169,6 +183,13 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
     }
     // =========================================================================
 
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email address is required',
+      });
+    }
+
     try {
       await createZohoCrmLead({
         project,
@@ -177,7 +198,7 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
         leadStatus: resolvedLeadStatus || undefined,
         name,
         phone: phoneStr, // <--- Send the clean, validated string to Zoho
-        email,
+        email: normalizedEmail,
         landingVariant: normalizedLandingVariant,
         landingVersion: normalizedLandingVersion,
         version: normalizedLandingVersion,

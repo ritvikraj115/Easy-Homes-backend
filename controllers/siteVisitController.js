@@ -68,6 +68,10 @@ function normalizeOptionalValue(value) {
   return value;
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || '').trim());
+}
+
 function sanitizePickupDetails({
   transportRequired,
   pickupAddress,
@@ -383,6 +387,20 @@ exports.create = async (req, res, next) => {
     // =========================================================================
 
     const normalizedEmail = String(email || '').trim();
+    const requiresEmail = normalizedProject === 'kalpavruksha' || Boolean(normalizedLandingVersion || normalizedLandingVariant);
+    if (requiresEmail && !normalizedEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'email is required'
+      });
+    }
+    if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email address is required'
+      });
+    }
+
     const bookingEmail = syncsToZohoBookings && !normalizedEmail
       ? `${phoneStr}@easyhomess.com`
       : normalizedEmail;
