@@ -18,9 +18,23 @@ router.post('/', async (req, res) => {
       return res.json({ results: [] });
     }
 
-    const results = await Promise.all(
-      addresses.map(addr => geocodeAddress(addr))
+    const addressKeys = addresses.map(addr => String(addr || '').trim().toLowerCase());
+    const uniqueAddressMap = new Map();
+    addresses.forEach((address, index) => {
+      const key = addressKeys[index];
+      if (key && !uniqueAddressMap.has(key)) {
+        uniqueAddressMap.set(key, address);
+      }
+    });
+
+    const uniqueResults = await Promise.all(
+      Array.from(uniqueAddressMap.entries()).map(async ([key, address]) => [
+        key,
+        await geocodeAddress(address),
+      ])
     );
+    const resultsByKey = new Map(uniqueResults);
+    const results = addressKeys.map(key => resultsByKey.get(key) || { lat: null, lng: null });
 
     res.json({ results });
   } catch (err) {

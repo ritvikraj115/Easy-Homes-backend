@@ -2,6 +2,7 @@ const { Client } = require('@googlemaps/google-maps-services-js');
 const redis        = require('../config/redis');
 const client       = new Client();
 const TTL_SECONDS  = 24 * 60 * 60; // cache for 1 day
+const inFlightGeocodeRequests = new Map();
 
 class GeocodeServiceError extends Error {
   constructor(message, statusCode = 502, code = 'GEOCODE_FAILED') {
@@ -13,10 +14,11 @@ class GeocodeServiceError extends Error {
 }
 
 /**
- * Returns { lat, lng } for address, using Redis as cache.
+ * Returns { lat, lng } for address, using cache when available.
  */
 async function geocodeAddress(address) {
-  if (!address || typeof address !== 'string') {
+  const normalizedAddress = String(address || '').trim();
+  if (!normalizedAddress) {
     throw new GeocodeServiceError('Invalid address provided', 400, 'INVALID_ADDRESS');
   }
 
@@ -24,7 +26,7 @@ async function geocodeAddress(address) {
     throw new GeocodeServiceError('GOOGLE_MAPS_API_KEY is not configured', 500, 'MISSING_API_KEY');
   }
 
-  const key = `geocode:${address}`;
+  const key = `geocode:${normalizedAddress.toLowerCase()}`;
   const cached = await redis.get(key);
   if (cached) {
     try {
@@ -34,6 +36,21 @@ async function geocodeAddress(address) {
     }
   }
 
+  if (inFlightGeocodeRequests.has(key)) {
+    return inFlightGeocodeRequests.get(key);
+  }
+
+  const geocodePromise = fetchAndCacheGeocode(normalizedAddress, key);
+  inFlightGeocodeRequests.set(key, geocodePromise);
+
+  try {
+    return await geocodePromise;
+  } finally {
+    inFlightGeocodeRequests.delete(key);
+  }
+}
+
+async function fetchAndCacheGeocode(address, key) {
   let res;
   try {
     res = await client.geocode({
@@ -56,7 +73,9 @@ async function geocodeAddress(address) {
 
   const apiStatus = res.data?.status;
   if (apiStatus === 'ZERO_RESULTS') {
-    return { lat: null, lng: null };
+    const emptyResult = { lat: null, lng: null };
+    await redis.set(key, JSON.stringify(emptyResult), 'EX', TTL_SECONDS);
+    return emptyResult;
   }
 
   if (apiStatus !== 'OK') {
@@ -70,11 +89,7 @@ async function geocodeAddress(address) {
   }
 
   const { lat, lng } = location;
-  try {
-    await redis.set(key, JSON.stringify({ lat, lng }), 'EX', TTL_SECONDS);
-  } catch (_) {
-    // Cache failure should not block successful geocoding.
-  }
+  await redis.set(key, JSON.stringify({ lat, lng }), 'EX', TTL_SECONDS);
  
   return { lat, lng };
 }
