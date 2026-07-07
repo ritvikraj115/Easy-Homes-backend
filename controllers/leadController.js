@@ -4,7 +4,7 @@ const { createZohoAppointment, getZohoAvailableSlots } = require('../services/zo
 function inferDownloadLeadStatus(rawValue) {
   const text = String(rawValue || '').trim().toLowerCase();
   if (!text) return '';
-  if (text.includes('brochure')) return 'Downloaded Brochure';
+  if (text.includes('brochure')) return 'Brochure and Map Requested on WhatsApp';
   if (text.includes('layout')) return 'Downloaded Layout';
   return '';
 }
@@ -16,6 +16,12 @@ function normalizeText(value) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || '').trim());
+}
+
+function normalizeIndianNationalPhone(value) {
+  const digitsOnly = String(value || '').replace(/\D/g, '');
+  const nationalNumber = digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly;
+  return /^[6-9]\d{9}$/.test(nationalNumber) ? nationalNumber : '';
 }
 
 function normalizeLandingVariant(value) {
@@ -173,12 +179,11 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
     // =========================================================================
     // STRICT 10-DIGIT PHONE VALIDATION
     // =========================================================================
-    const phoneStr = String(phone).trim();
-    const phoneRegex = /^\d{10}$/; // Matches exactly 10 digits
-    if (!phoneRegex.test(phoneStr)) {
+    const phoneStr = normalizeIndianNationalPhone(phone);
+    if (!phoneStr) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Phone number must be strictly 10 digits.' 
+        message: 'Phone number must be a valid 10-digit Indian mobile number.' 
       });
     }
     // =========================================================================

@@ -158,6 +158,35 @@ function splitName(fullName) {
   };
 }
 
+function normalizeIndianPhoneForZoho(value) {
+  const rawPhone = String(value || '').trim();
+  const digitsOnly = rawPhone.replace(/\D/g, '');
+  if (!digitsOnly) return '';
+
+  const nationalNumber = digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly;
+  if (/^[6-9]\d{9}$/.test(nationalNumber)) {
+    return `+91${nationalNumber}`;
+  }
+
+  return rawPhone;
+}
+
+function buildPhoneSearchCandidates(value) {
+  const rawPhone = String(value || '').trim();
+  const digitsOnly = rawPhone.replace(/\D/g, '');
+  const nationalNumber = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : '';
+  const candidates = [
+    rawPhone,
+    digitsOnly,
+    nationalNumber,
+    nationalNumber ? `+91${nationalNumber}` : '',
+  ];
+
+  return candidates.filter((candidate, index) => (
+    candidate && candidates.indexOf(candidate) === index
+  ));
+}
+
 function setConfiguredFieldValue(payload, fieldApiName, value) {
   const apiName = String(fieldApiName || '').trim();
   const normalizedValue = String(value || '').trim();
@@ -633,6 +662,7 @@ function buildLeadPayload({
   googleAdsAttribution,
 }) {
   const { firstName, lastName } = splitName(name);
+  const normalizedPhone = normalizeIndianPhoneForZoho(phone);
   const company = String(
     process.env.ZOHO_CRM_DEFAULT_COMPANY ||
     `Easy Homes - ${String(project || 'Website Lead').trim()}`
@@ -642,8 +672,8 @@ function buildLeadPayload({
     Last_Name: lastName || 'Lead',
     Company: company || 'Easy Homes',
     Lead_Source: String(source || 'Website').trim(),
-    Phone: String(phone || '').trim(),
-    Mobile: String(phone || '').trim(),
+    Phone: normalizedPhone,
+    Mobile: normalizedPhone,
   };
 
   setPlatformSourceField(payload, platformSource || platform_source || 'Website');
@@ -731,6 +761,7 @@ function buildLeadPayload({
 
 const LEAD_STATUS_PRIORITY = Object.freeze({
   'Downloaded Brochure': 10,
+  'Brochure and Map Requested on WhatsApp': 10,
   'Downloaded Layout': 10,
   'Requested Callback': 15,
   'Callback Requested': 15,
@@ -823,13 +854,7 @@ async function findExistingLeadByPhone({
   const rawPhone = String(phone || '').trim();
   if (!rawPhone) return null;
 
-  const digitsOnly = rawPhone.replace(/\D/g, '');
-  const candidateValues = [];
-  for (const value of [rawPhone, digitsOnly]) {
-    if (value && !candidateValues.includes(value)) {
-      candidateValues.push(value);
-    }
-  }
+  const candidateValues = buildPhoneSearchCandidates(rawPhone);
 
   const searchEndpoint = `${endpoint}/search`;
   const attempts = [];

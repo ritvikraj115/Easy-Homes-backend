@@ -2,6 +2,7 @@ const axios = require('axios');
 
 const GOOGLE_PLACES_BASE_URL = 'https://places.googleapis.com/v1/places';
 const GOOGLE_FIELD_MASK = 'displayName,rating,userRatingCount,googleMapsUri';
+const DEFAULT_KALPAVRUKSHA_PLACE_ID = 'ChIJNRWJPwDvNToR_tPFD6Zsj9s';
 const DEFAULT_REVIEW_URL = 'https://share.google/OHvpBdiGZ7sqZGHYR';
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -39,10 +40,10 @@ async function fetchKalpavrukshaGoogleReviews() {
   }
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  const placeId = process.env.KALPAVRUKSHA_GOOGLE_PLACE_ID;
+  const placeId = process.env.KALPAVRUKSHA_GOOGLE_PLACE_ID || DEFAULT_KALPAVRUKSHA_PLACE_ID;
   const fallbackReviewUrl = process.env.KALPAVRUKSHA_GOOGLE_REVIEW_URL || DEFAULT_REVIEW_URL;
 
-  if (!apiKey || !placeId) {
+  if (!apiKey) {
     throw new GoogleReviewsServiceError(
       'Google reviews are not configured for Kalpavruksha.',
       503,

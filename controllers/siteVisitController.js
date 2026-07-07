@@ -72,6 +72,12 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || '').trim());
 }
 
+function normalizeIndianNationalPhone(value) {
+  const digitsOnly = String(value || '').replace(/\D/g, '');
+  const nationalNumber = digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly;
+  return /^[6-9]\d{9}$/.test(nationalNumber) ? nationalNumber : '';
+}
+
 function sanitizePickupDetails({
   transportRequired,
   pickupAddress,
@@ -373,18 +379,13 @@ exports.create = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'name, phone, preferredDate are required' });
     }
 
-    // =========================================================================
-    // 2. STRICT 10-DIGIT PHONE VALIDATION
-    // =========================================================================
-    const phoneStr = String(phone).trim();
-    const phoneRegex = /^\d{10}$/; // Matches exactly 10 digits (0-9)
-    if (!phoneRegex.test(phoneStr)) {
+    const phoneStr = normalizeIndianNationalPhone(phone);
+    if (!phoneStr) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number must be strictly 10 digits.'
+        message: 'Phone number must be a valid 10-digit Indian mobile number.'
       });
     }
-    // =========================================================================
 
     const normalizedEmail = String(email || '').trim();
     const requiresEmail = normalizedProject === 'kalpavruksha' || Boolean(normalizedLandingVersion || normalizedLandingVariant);
