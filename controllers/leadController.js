@@ -90,11 +90,19 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
     const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
 
     const normalizedEmail = normalizeText(email);
+    const phoneStr = normalizeIndianNationalPhone(phone);
 
     if (!name || !phone) {
       return res.status(400).json({
         success: false,
         message: 'name and phone are required',
+      });
+    }
+
+    if (!phoneStr) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be a valid 10-digit Indian mobile number.',
       });
     }
 
@@ -112,7 +120,7 @@ exports.captureWebsiteEnquiryLead = async (req, res, next) => {
         platformSource: normalizeText(platformSource) || normalizeText(platform_source) || 'Website',
         leadStatus: resolveWebsiteEnquiryLeadStatus(leadStatus),
         name,
-        phone,
+        phone: phoneStr,
         email: normalizedEmail,
         requirements: normalizeText(requirements),
         landingVariant: normalizedLandingVariant,

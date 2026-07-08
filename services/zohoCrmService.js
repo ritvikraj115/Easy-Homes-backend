@@ -292,8 +292,8 @@ function applyGoogleAdsAttributionFields(payload, attribution) {
   // Pushing gclid directly to 'Lead_Identifier'
   setConfiguredFieldValue(payload, 'GCL_ID', normalizedAttribution.gclid);
   
-  // Pushing campaignId directly to 'Ad_Campaign'
-  setConfiguredFieldValue(payload, 'Ad_Campaign', normalizedAttribution.utmCampaign);
+  // Pushing campaignId directly to 'Ad_Campaign', with UTM campaign as a fallback.
+  setConfiguredFieldValue(payload, 'Ad_Campaign', normalizedAttribution.campaignId || normalizedAttribution.utmCampaign);
   // ==========================================
 
   // (Optional) The rest remain mapped via env variables if you ever decide to use them, 
