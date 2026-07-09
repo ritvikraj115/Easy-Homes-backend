@@ -766,6 +766,7 @@ const LEAD_STATUS_PRIORITY = Object.freeze({
   'Requested Callback': 15,
   'Callback Requested': 15,
   'Visit Scheduled': 20,
+  'Slot availabilty issue': 25,
 });
 
 function getScopeHints(moduleApiName) {

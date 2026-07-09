@@ -20,6 +20,9 @@ const SiteVisitSchema = new mongoose.Schema(
     landingVersion: { type: String },
     landing_version: { type: String },
     version: { type: String },
+    slotAvailabilityIssue: { type: Boolean, default: false },
+    slotAvailabilityIssueReason: { type: String },
+    slotAvailabilitySource: { type: String },
     status: { type: String, enum: ['requested', 'confirmed', 'cancelled'], default: 'requested' }
   },
   { timestamps: true }

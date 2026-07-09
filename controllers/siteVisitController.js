@@ -2,7 +2,7 @@
 const sendMail = require('../utils/sendMail');
 const { sendSiteVisitTemplate, sendFreeTextMessage } = require('../services/whatsappService');
 const { createZohoCrmLead, isZohoCrmStrictMode } = require('../services/zohoCrmService');
-const { createZohoAppointment, getZohoAvailableSlots } = require('../services/zohoBookingsService');
+const { createZohoAppointment, getZohoAvailableSlots, getZohoAvailableSlotsDetailed } = require('../services/zohoBookingsService');
 
 function isZohoDebugEnabled() {
   const value = String(process.env.ZOHO_BOOKINGS_DEBUG || '').toLowerCase();
@@ -68,6 +68,19 @@ function normalizeOptionalValue(value) {
   return value;
 }
 
+function normalizeBooleanFlag(value) {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+}
+
+const PICKUP_ADDRESS_MAX_LENGTH = 50;
+
+function normalizePickupAddress(value) {
+  const normalized = String(value || '').trim();
+  return normalized ? normalized.slice(0, PICKUP_ADDRESS_MAX_LENGTH) : undefined;
+}
+
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || '').trim());
 }
@@ -95,7 +108,7 @@ function sanitizePickupDetails({
     };
   }
 
-  const normalizedPickupAddress = String(pickupAddress || '').trim() || undefined;
+  const normalizedPickupAddress = normalizePickupAddress(pickupAddress);
   return {
     pickupAddress: normalizedPickupAddress,
     pickupMode: pickupMode || 'manual',
@@ -141,11 +154,15 @@ async function processSiteVisitPostProcessing(job) {
     landingVersion,
     landing_version,
     version,
+    slotAvailabilityIssue,
+    slotAvailabilityIssueReason,
+    slotAvailabilitySource,
   } = job;
   const normalizedLandingVariant = normalizeLandingVariant(landingVariant || landing_variant);
   const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
 
   const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
+  const rawPickupAddress = String(pickupAddress || '').trim() || undefined;
   const {
     pickupAddress: normalizedPickupAddress,
     pickupMode: normalizedPickupMode,
@@ -171,6 +188,11 @@ async function processSiteVisitPostProcessing(job) {
   ];
   if (normalizedLandingVariant || normalizedLandingVersion) {
     adminLines.push(`Landing Version: ${normalizedLandingVersion || '-'} (${normalizedLandingVariant || '-'})`);
+  }
+  if (slotAvailabilityIssue || slotAvailabilityIssueReason || slotAvailabilitySource) {
+    adminLines.push(`Slot Availability Source: ${slotAvailabilitySource || '-'}`);
+    adminLines.push(`Slot Availability Issue: ${slotAvailabilityIssue ? 'Yes' : 'No'}`);
+    adminLines.push(`Slot Availability Issue Reason: ${slotAvailabilityIssueReason || '-'}`);
   }
   if (normalizedTransportRequired === 'Yes') {
     adminLines.push(`Pickup Address: ${normalizedPickupAddress || '-'}`);
@@ -270,6 +292,53 @@ async function processSiteVisitPostProcessing(job) {
       text: failOwnerMsg,
       html: failOwnerMsg.replace(/\n/g, '<br/>')
     }).catch(err => console.error('[site-visit] Failed to send owner booking error email:', err.message));
+
+    try {
+      const crmNotes = [
+        'Lead event: Site visit requested via website form, but Zoho Bookings could not create the appointment.',
+        `Lead status reason: Slot availabilty issue`,
+        `Preferred date/time selected by user: ${dateStr}`,
+        `Zoho Bookings failure reason: ${failReason}`,
+        slotAvailabilitySource ? `Slot availability source shown to user: ${slotAvailabilitySource}` : null,
+        slotAvailabilityIssue ? 'Fallback slot list was shown because live availability could not be verified.' : null,
+        slotAvailabilityIssueReason ? `Live availability issue reason: ${slotAvailabilityIssueReason}` : null,
+        notes ? `Site visit notes: ${notes}` : null,
+        normalizedPickupMode ? `Pickup mode: ${normalizedPickupMode}` : null,
+        normalizedPickupLat && normalizedPickupLng ? `Pickup coordinates: ${normalizedPickupLat}, ${normalizedPickupLng}` : null,
+        rawPickupAddress ? `Pickup address: ${rawPickupAddress}` : null,
+        `Transport required: ${normalizedTransportRequired}`,
+      ].filter(Boolean).join('\n');
+
+      const crmResponse = await createZohoCrmLead({
+        project,
+        source: 'Website',
+        platformSource: platformSource || platform_source || 'Website',
+        leadStatus: 'Slot availabilty issue',
+        name,
+        phone,
+        email,
+        preferredDate,
+        pickupAddress: rawPickupAddress,
+        landingVariant: normalizedLandingVariant,
+        landingVersion: normalizedLandingVersion,
+        version: normalizedLandingVersion,
+        googleAdsAttribution,
+        requirements: 'Site visit requested, but Zoho Bookings appointment could not be created.',
+        notes: crmNotes,
+      });
+      zohoDebug('crm.slot_issue.done', { visitId, synced: Boolean(crmResponse) });
+    } catch (crmError) {
+      console.error('[site-visit] crm.slot_issue.sync.failed', crmError.message);
+      zohoDebug('crm.slot_issue.error', {
+        visitId,
+        message: crmError.message,
+        code: crmError.code || null,
+        details: crmError.details || crmError.response?.data || null,
+      });
+      if (isZohoCrmStrictMode()) {
+        throw crmError;
+      }
+    }
     return;
   }
 
@@ -279,7 +348,7 @@ async function processSiteVisitPostProcessing(job) {
       notes ? `Site visit notes: ${notes}` : null,
       normalizedPickupMode ? `Pickup mode: ${normalizedPickupMode}` : null,
       normalizedPickupLat && normalizedPickupLng ? `Pickup coordinates: ${normalizedPickupLat}, ${normalizedPickupLng}` : null,
-      normalizedPickupAddress ? `Pickup address: ${normalizedPickupAddress}` : null,
+      rawPickupAddress ? `Pickup address: ${rawPickupAddress}` : null,
       `Transport required: ${normalizedTransportRequired}`,
     ].filter(Boolean).join('\n');
 
@@ -292,7 +361,7 @@ async function processSiteVisitPostProcessing(job) {
       phone,
       email,
       preferredDate,
-      pickupAddress: normalizedPickupAddress,
+      pickupAddress: rawPickupAddress,
       landingVariant: normalizedLandingVariant,
       landingVersion: normalizedLandingVersion,
       version: normalizedLandingVersion,
@@ -338,7 +407,11 @@ exports.create = async (req, res, next) => {
       landingVersion,
       landing_version,
       version,
+      slotAvailabilityIssue,
+      slotAvailabilityIssueReason,
+      slotAvailabilitySource,
     } = req.body || {};
+    const rawPickupAddress = String(pickupAddress || '').trim() || undefined;
     const normalizedLandingVariant = normalizeLandingVariant(landingVariant || landing_variant);
     const normalizedLandingVersion = normalizeLandingVersion(landingVersion || landing_version || version, normalizedLandingVariant);
     const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
@@ -367,6 +440,8 @@ exports.create = async (req, res, next) => {
       pickupMode: normalizedPickupMode || null,
       landingVariant: normalizedLandingVariant || null,
       landingVersion: normalizedLandingVersion || null,
+      slotAvailabilityIssue: normalizeBooleanFlag(slotAvailabilityIssue),
+      slotAvailabilitySource: slotAvailabilitySource || null,
       hasGoogleAdsAttribution: Boolean(googleAdsAttribution)
     });
 
@@ -429,7 +504,10 @@ exports.create = async (req, res, next) => {
       landing_variant: normalizedLandingVariant,
       landingVersion: normalizedLandingVersion,
       landing_version: normalizedLandingVersion,
-      version: normalizedLandingVersion
+      version: normalizedLandingVersion,
+      slotAvailabilityIssue: normalizeBooleanFlag(slotAvailabilityIssue),
+      slotAvailabilityIssueReason: slotAvailabilityIssueReason || undefined,
+      slotAvailabilitySource: slotAvailabilitySource || undefined
     });
     const visitId = String(visit?._id || '');
     zohoDebug('create.saved', { visitId, asyncProcessing: true });
@@ -444,7 +522,7 @@ exports.create = async (req, res, next) => {
       transportRequired: normalizedTransportRequired,
       notes,
       googleAdsAttribution,
-      pickupAddress: normalizedPickupAddress,
+      pickupAddress: rawPickupAddress,
       pickupMode: normalizedPickupMode,
       pickupLat: normalizedPickupLat,
       pickupLng: normalizedPickupLng,
@@ -453,7 +531,10 @@ exports.create = async (req, res, next) => {
       landing_variant: normalizedLandingVariant,
       landingVersion: normalizedLandingVersion,
       landing_version: normalizedLandingVersion,
-      version: normalizedLandingVersion
+      version: normalizedLandingVersion,
+      slotAvailabilityIssue: normalizeBooleanFlag(slotAvailabilityIssue),
+      slotAvailabilityIssueReason: slotAvailabilityIssueReason || undefined,
+      slotAvailabilitySource: slotAvailabilitySource || undefined
     });
 
     return res.status(201).json({
@@ -483,10 +564,12 @@ exports.getAvailableSlots = async (req, res, next) => {
       });
     }
 
-    const slots = await getZohoAvailableSlots({ preferredDate });
+    const availability = await getZohoAvailableSlotsDetailed({ preferredDate });
     return res.json({
       success: true,
-      slots,
+      slots: availability.slots,
+      availabilityStatus: availability.availabilityStatus,
+      availabilityMessage: availability.availabilityMessage,
     });
   } catch (err) {
     return next(err);

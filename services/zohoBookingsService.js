@@ -124,6 +124,7 @@ function getDatePartsForTimeZone(date, timeZone) {
     month: '2-digit',
     day: '2-digit'
   });
+
   const parts = formatter.formatToParts(date);
   return parts.reduce((acc, part) => {
     acc[part.type] = part.value;
@@ -138,6 +139,7 @@ function getTimePartsForTimeZone(date, timeZone) {
     minute: '2-digit',
     hour12: false
   });
+
   const parts = formatter.formatToParts(date);
   return parts.reduce((acc, part) => {
     acc[part.type] = part.value;
@@ -153,12 +155,14 @@ function parseSlotMinutes(rawSlot) {
   let hours = Number(match[1]);
   const minutes = Number(match[2]);
   const meridiem = match[3]?.toUpperCase();
+
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
 
   if (meridiem === 'PM' && hours < 12) hours += 12;
   if (meridiem === 'AM' && hours === 12) hours = 0;
 
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
   return (hours * 60) + minutes;
 }
 
@@ -169,12 +173,14 @@ function filterPastSlotsForSelectedDate(slots, preferredDate, timeZone) {
   const now = new Date();
   const todayParts = getDatePartsForTimeZone(now, timeZone);
   const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+
   if (selectedDate !== today) {
     return slots;
   }
 
   const timeParts = getTimePartsForTimeZone(now, timeZone);
   const currentMinutes = (Number(timeParts.hour) * 60) + Number(timeParts.minute);
+
   return slots.filter((slot) => {
     const slotMinutes = parseSlotMinutes(slot);
     return slotMinutes === null || slotMinutes > currentMinutes;
@@ -193,13 +199,16 @@ function formatZohoDateTime(preferredDate, timeZone) {
   if (naiveMatch && !hasTz) {
     const [, year, month, day, hour, minute, second] = naiveMatch;
     const monthName = MONTHS[Number(month) - 1];
+
     if (!monthName) {
       throw new Error(`Invalid month in preferredDate: ${preferredDate}`);
     }
+
     return `${pad2(day)}-${monthName}-${year} ${pad2(hour)}:${pad2(minute)}:${pad2(second || '00')}`;
   }
 
   const date = new Date(preferredDate);
+
   if (Number.isNaN(date.getTime())) {
     throw new Error(`Invalid preferredDate: ${preferredDate}`);
   }
@@ -226,6 +235,7 @@ function formatZohoDateTime(preferredDate, timeZone) {
 
 async function refreshAccessToken() {
   const accountsUrl = String(process.env.ZOHO_ACCOUNTS_URL || '').replace(/\/$/, '');
+
   const body = new URLSearchParams({
     refresh_token: process.env.ZOHO_BOOKINGS_REFRESH_TOKEN,
     client_id: process.env.ZOHO_BOOKINGS_CLIENT_ID,
@@ -234,6 +244,7 @@ async function refreshAccessToken() {
   });
 
   const url = `${accountsUrl}/oauth/v2/token`;
+
   logDebug('auth.refresh.start', {
     url,
     hasRefreshToken: Boolean(process.env.ZOHO_BOOKINGS_REFRESH_TOKEN),
@@ -245,6 +256,7 @@ async function refreshAccessToken() {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     timeout: 15000
   });
+
   logDebug('auth.refresh.success', {
     status: response.status,
     hasAccessToken: Boolean(response.data?.access_token),
@@ -252,13 +264,19 @@ async function refreshAccessToken() {
     expiresIn: response.data?.expires_in || null
   });
 
-  const { access_token: accessToken, api_domain: apiDomain, expires_in: expiresIn } = response.data || {};
+  const {
+    access_token: accessToken,
+    api_domain: apiDomain,
+    expires_in: expiresIn
+  } = response.data || {};
+
   if (!accessToken) {
     throw new Error('Zoho token refresh failed: access_token missing in response');
   }
 
   cachedAccessToken = accessToken;
   cachedApiDomain = apiDomain || process.env.ZOHO_BOOKINGS_API_DOMAIN || null;
+
   if (!cachedApiDomain) {
     throw new Error('Zoho token refresh failed: api_domain missing and ZOHO_BOOKINGS_API_DOMAIN not set');
   }
@@ -287,22 +305,36 @@ async function getAccessToken() {
         apiDomain: cachedApiDomain,
         expiresAt: new Date(tokenExpiresAt).toISOString()
       });
-      return { accessToken: cachedAccessToken, apiDomain: cachedApiDomain, authMode: 'refresh_token_cached' };
+
+      return {
+        accessToken: cachedAccessToken,
+        apiDomain: cachedApiDomain,
+        authMode: 'refresh_token_cached'
+      };
     }
+
     return refreshAccessToken();
   }
 
   if (process.env.ZOHO_BOOKINGS_ACCESS_TOKEN) {
     const apiDomain = process.env.ZOHO_BOOKINGS_API_DOMAIN;
+
     if (!apiDomain) {
       throw new Error('ZOHO_BOOKINGS_API_DOMAIN is required when using ZOHO_BOOKINGS_ACCESS_TOKEN');
     }
+
     const accessToken = process.env.ZOHO_BOOKINGS_ACCESS_TOKEN;
+
     logDebug('auth.static_token', {
       apiDomain,
       token: maskSecret(accessToken)
     });
-    return { accessToken, apiDomain, authMode: 'static_token' };
+
+    return {
+      accessToken,
+      apiDomain,
+      authMode: 'static_token'
+    };
   }
 
   throw new Error('Unable to get Zoho access token: refresh flow and static token are both unavailable');
@@ -313,21 +345,28 @@ function buildCustomerDetails({ name, email, phone }) {
     name: String(name || '').trim(),
     phone_number: String(phone || '').trim()
   };
+
   if (email) {
     details.email = String(email).trim();
   }
+
   return details;
 }
 
 function buildNotes({ project, notes, pickupMode, pickupLat, pickupLng }) {
   const noteLines = [];
+
   if (project) noteLines.push(`Project: ${project}`);
   if (pickupMode) noteLines.push(`Pickup mode: ${pickupMode}`);
+
   if (Number.isFinite(Number(pickupLat)) && Number.isFinite(Number(pickupLng))) {
     noteLines.push(`Pickup coordinates: ${Number(pickupLat)}, ${Number(pickupLng)}`);
   }
+
   if (notes) noteLines.push(`Notes: ${notes}`);
+
   if (!noteLines.length) return null;
+
   return noteLines.join('\n');
 }
 
@@ -337,74 +376,56 @@ function normalizeTransportRequired(value) {
   return 'Yes';
 }
 
+const PICKUP_ADDRESS_LINE_LENGTH = 25;
+const PICKUP_ADDRESS_BOOKINGS_MAX_LENGTH = 50;
+
 function isCoordinatePair(value) {
   return /^\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*$/.test(String(value || '').trim());
 }
 
-function parsePickupAddress(pickupAddress, pickupLat, pickupLng) {
+function getBasePickupAddressText(pickupAddress, pickupLat, pickupLng) {
   const rawText = String(pickupAddress || '').trim();
-  const fallbackFromCoordinates = Number.isFinite(Number(pickupLat)) && Number.isFinite(Number(pickupLng))
-    ? `Selected location near ${Number(pickupLat).toFixed(6)}, ${Number(pickupLng).toFixed(6)}`
-    : null;
-  const addressText = (rawText || fallbackFromCoordinates || 'Pickup address not provided').replace(/\s+/g, ' ').trim();
+
+  const fallbackFromCoordinates =
+    Number.isFinite(Number(pickupLat)) && Number.isFinite(Number(pickupLng))
+      ? `Selected location near ${Number(pickupLat).toFixed(6)}, ${Number(pickupLng).toFixed(6)}`
+      : null;
+
+  return (rawText || fallbackFromCoordinates || 'Pickup address not provided')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, PICKUP_ADDRESS_BOOKINGS_MAX_LENGTH);
+}
+
+function splitPickupAddressForZoho(addressText) {
+  const normalizedText = String(addressText || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, PICKUP_ADDRESS_BOOKINGS_MAX_LENGTH);
+
+  return {
+    addr_1: normalizedText.slice(0, PICKUP_ADDRESS_LINE_LENGTH),
+    addr_2: normalizedText.slice(PICKUP_ADDRESS_LINE_LENGTH, PICKUP_ADDRESS_BOOKINGS_MAX_LENGTH)
+  };
+}
+
+function parsePickupAddress(pickupAddress, pickupLat, pickupLng) {
+  const addressText = getBasePickupAddressText(pickupAddress, pickupLat, pickupLng);
 
   if (/^selected location near/i.test(addressText)) {
-    return {
-      addr_1: addressText,
-      addr_2: '',
-      city: '',
-      state: ''
-    };
+    return splitPickupAddressForZoho(addressText);
   }
 
   if (isCoordinatePair(addressText)) {
-    return {
-      addr_1: `Selected location near ${addressText}`,
-      addr_2: '',
-      city: '',
-      state: ''
-    };
+    return splitPickupAddressForZoho(`Selected location near ${addressText}`);
   }
 
-  const parts = addressText
-    .split(',')
-    .map(part => part.trim())
-    .filter(Boolean);
-
-  let postalCode = '';
-  for (let index = parts.length - 1; index >= 0; index -= 1) {
-    const match = parts[index].match(/\b(\d{6})\b/);
-    if (match) {
-      postalCode = match[1];
-      parts[index] = parts[index].replace(match[0], '').trim();
-      if (!parts[index]) {
-        parts.splice(index, 1);
-      }
-      break;
-    }
-  }
-
-  let country = '';
-  if (parts.length && /india|bharat/i.test(parts[parts.length - 1])) {
-    country = parts.pop();
-  }
-
-  const state = parts.length >= 2 ? parts.pop() : '';
-  const city = parts.length >= 1 ? parts.pop() : '';
-  const addr_1 = parts.length ? parts.shift() : addressText;
-  const addr_2 = parts.length ? parts.join(', ') : '';
-
-  // RETURN ONLY THE FIELDS ENABLED IN THE ZOHO UI
-  return {
-    addr_1,
-    addr_2,
-    city,
-    state
-  };
+  return splitPickupAddressForZoho(addressText);
 }
 
 function looksLikeCreatedAppointment(returnValue) {
   if (!returnValue || typeof returnValue !== 'object') return false;
+
   return Boolean(
     returnValue.booking_id ||
     returnValue.summary_url ||
@@ -438,23 +459,15 @@ function getPickupFieldType() {
     .toLowerCase();
 }
 
-function formatPickupAddressText(pickupAddress, pickupLat, pickupLng) {
-  const rawText = String(pickupAddress || '').trim();
-  const fallbackFromCoordinates =
-    Number.isFinite(Number(pickupLat)) && Number.isFinite(Number(pickupLng))
-      ? `Selected location near ${Number(pickupLat).toFixed(6)}, ${Number(pickupLng).toFixed(6)}`
-      : null;
-
-  return (rawText || fallbackFromCoordinates || 'Pickup address not provided')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function buildAdditionalFields({ pickupAddress, pickupLat, pickupLng, transportRequired }) {
-  // Strip accidental quotes from the .env variables just in case
-  const pickupFieldKey = String(process.env.ZOHO_BOOKINGS_PICKUP_ADDRESS_FIELD || 'Pickup Address').replace(/['"]/g, '').trim();
-  const transportFieldKey = String(process.env.ZOHO_BOOKINGS_TRANSPORT_FIELD || 'Need Transport').replace(/['"]/g, '').trim();
-  
+  const pickupFieldKey = String(process.env.ZOHO_BOOKINGS_PICKUP_ADDRESS_FIELD || 'Pickup Address')
+    .replace(/['"]/g, '')
+    .trim();
+
+  const transportFieldKey = String(process.env.ZOHO_BOOKINGS_TRANSPORT_FIELD || 'Need Transport')
+    .replace(/['"]/g, '')
+    .trim();
+
   const normalizedTransportRequired = normalizeTransportRequired(transportRequired);
   const fields = {};
 
@@ -462,27 +475,19 @@ function buildAdditionalFields({ pickupAddress, pickupLat, pickupLng, transportR
     fields[transportFieldKey] = String(process.env.ZOHO_BOOKINGS_TRANSPORT_YES_VALUE || 'Yes').trim();
   }
 
-  // Address fields MUST be objects. 
-  // We ONLY pass 'addr_1'. By omitting 'city', 'state', etc., we bypass Zoho's strict picklist validation.
   if (normalizedTransportRequired === 'No') {
     const selfArrivalText = String(
       process.env.ZOHO_BOOKINGS_SELF_ARRIVAL_PICKUP_TEXT ||
       'Self-arrival - transport not required'
     ).trim();
 
-    fields[pickupFieldKey] = {
-      addr_1: selfArrivalText
-    };
+    fields[pickupFieldKey] = splitPickupAddressForZoho(selfArrivalText);
 
     return Object.keys(fields).length ? fields : null;
   }
 
   if (pickupAddress || Number.isFinite(Number(pickupLat)) || Number.isFinite(Number(pickupLng))) {
-    const addressText = formatPickupAddressText(pickupAddress, pickupLat, pickupLng);
-    
-    fields[pickupFieldKey] = {
-      addr_1: addressText
-    };
+    fields[pickupFieldKey] = parsePickupAddress(pickupAddress, pickupLat, pickupLng);
   }
 
   return Object.keys(fields).length ? fields : null;
@@ -502,6 +507,7 @@ async function createZohoAppointment({
   pickupLng
 }) {
   const traceId = `zb_${Date.now()}`;
+
   logDebug('appointment.start', {
     traceId,
     project: project || null,
@@ -536,10 +542,12 @@ async function createZohoAppointment({
 
     const form = new FormData();
     const serviceId = process.env.ZOHO_BOOKINGS_SERVICE_ID;
+
     form.append('service_id', serviceId);
 
     let assigneeType = null;
     let assigneeId = null;
+
     if (process.env.ZOHO_BOOKINGS_STAFF_ID) {
       assigneeType = 'staff_id';
       assigneeId = process.env.ZOHO_BOOKINGS_STAFF_ID;
@@ -556,6 +564,7 @@ async function createZohoAppointment({
 
     const timeZone = process.env.ZOHO_BOOKINGS_TIMEZONE;
     const fromTime = formatZohoDateTime(preferredDate, timeZone);
+
     form.append('from_time', fromTime);
 
     if (timeZone) {
@@ -571,16 +580,25 @@ async function createZohoAppointment({
       pickupLng,
       transportRequired
     });
+
     if (additionalFields) {
       form.append('additional_fields', JSON.stringify(additionalFields));
     }
 
-    const noteText = buildNotes({ project, notes, pickupMode, pickupLat, pickupLng });
+    const noteText = buildNotes({
+      project,
+      notes,
+      pickupMode,
+      pickupLat,
+      pickupLng
+    });
+
     if (noteText) {
       form.append('notes', noteText);
     }
 
     const url = `${String(apiDomain).replace(/\/$/, '')}/bookings/v1/json/appointment`;
+
     logDebug('appointment.request', {
       traceId,
       url,
@@ -612,6 +630,7 @@ async function createZohoAppointment({
     });
 
     const responseStatus = String(response.data?.response?.status || '').toLowerCase();
+
     if (responseStatus && responseStatus !== 'success') {
       const error = new Error(`Zoho Bookings response status: ${responseStatus}`);
       error.code = 'ZOHO_BOOKING_FAILED';
@@ -620,6 +639,7 @@ async function createZohoAppointment({
     }
 
     const returnValue = response.data?.response?.returnvalue || {};
+
     if (isCreateAppointmentFailure(returnValue)) {
       const message = returnValue.message || 'Zoho Bookings rejected appointment payload';
       const error = new Error(message);
@@ -631,6 +651,7 @@ async function createZohoAppointment({
     return response.data;
   } catch (error) {
     console.error(`${DEBUG_PREFIX} appointment.failed ${error.message}`);
+
     logDebug('appointment.error', {
       traceId,
       message: error.message,
@@ -639,71 +660,118 @@ async function createZohoAppointment({
       data: error.response?.data || null,
       details: error.details || null
     });
+
     throw error;
   }
 }
-// Add this new function above module.exports
-async function getZohoAvailableSlots({ preferredDate }) {
-  if (!isEnabled()) return [];
+
+async function fetchZohoAvailableSlots({ preferredDate }) {
+  if (!isEnabled()) {
+    return {
+      slots: [],
+      availabilityStatus: 'disabled',
+      availabilityMessage: 'Zoho Bookings is disabled.'
+    };
+  }
+
   ensureConfig();
 
+  const { accessToken, apiDomain } = await getAccessToken();
+  const timeZone = process.env.ZOHO_BOOKINGS_TIMEZONE;
+
+  const dateObj = new Date(preferredDate);
+
+  if (Number.isNaN(dateObj.getTime())) {
+    return {
+      slots: [],
+      availabilityStatus: 'invalid_date',
+      availabilityMessage: 'Invalid preferred date.'
+    };
+  }
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || undefined,
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit'
+  });
+
+  const parts = formatter.formatToParts(dateObj);
+  const lookup = parts.reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  const selectedDate = `${lookup.day}-${lookup.month}-${lookup.year}`;
+  const serviceId = process.env.ZOHO_BOOKINGS_SERVICE_ID;
+
+  const params = new URLSearchParams({
+    service_id: serviceId,
+    selected_date: selectedDate
+  });
+
+  if (process.env.ZOHO_BOOKINGS_STAFF_ID) {
+    params.append('staff_id', process.env.ZOHO_BOOKINGS_STAFF_ID);
+  } else if (process.env.ZOHO_BOOKINGS_RESOURCE_ID) {
+    params.append('resource_id', process.env.ZOHO_BOOKINGS_RESOURCE_ID);
+  } else if (process.env.ZOHO_BOOKINGS_GROUP_ID) {
+    params.append('group_id', process.env.ZOHO_BOOKINGS_GROUP_ID);
+  }
+
+  const url = `${String(apiDomain).replace(/\/$/, '')}/bookings/v1/json/availableslots?${params.toString()}`;
+
+  const response = await axios.get(url, {
+    headers: {
+      Authorization: `Zoho-oauthtoken ${accessToken}`
+    },
+    timeout: 15000
+  });
+
+  const status = String(response.data?.response?.status || '').toLowerCase();
+
+  if (status !== 'success') {
+    return {
+      slots: [],
+      availabilityStatus: 'api_failure',
+      availabilityMessage: response.data?.response?.message || 'Zoho Bookings did not return available slots.'
+    };
+  }
+
+  const slots = response.data?.response?.returnvalue?.data || [];
+
+  return {
+    slots: filterPastSlotsForSelectedDate(Array.isArray(slots) ? slots : [], preferredDate, timeZone),
+    availabilityStatus: 'live',
+    availabilityMessage: ''
+  };
+}
+
+async function getZohoAvailableSlots({ preferredDate }) {
   try {
-    const { accessToken, apiDomain } = await getAccessToken();
-    const timeZone = process.env.ZOHO_BOOKINGS_TIMEZONE;
-
-    // Zoho Bookings availableslots API requires date in dd-MMM-yyyy format
-    const dateObj = new Date(preferredDate);
-    if (Number.isNaN(dateObj.getTime())) return [];
-
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: timeZone || undefined,
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit'
-    });
-    
-    const parts = formatter.formatToParts(dateObj);
-    const lookup = parts.reduce((acc, part) => {
-      acc[part.type] = part.value;
-      return acc;
-    }, {});
-    
-    const selectedDate = `${lookup.day}-${lookup.month}-${lookup.year}`;
-    const serviceId = process.env.ZOHO_BOOKINGS_SERVICE_ID;
-    
-    const params = new URLSearchParams({
-      service_id: serviceId,
-      selected_date: selectedDate
-    });
-
-    if (process.env.ZOHO_BOOKINGS_STAFF_ID) {
-      params.append('staff_id', process.env.ZOHO_BOOKINGS_STAFF_ID);
-    } else if (process.env.ZOHO_BOOKINGS_RESOURCE_ID) {
-      params.append('resource_id', process.env.ZOHO_BOOKINGS_RESOURCE_ID);
-    } else if (process.env.ZOHO_BOOKINGS_GROUP_ID) {
-      params.append('group_id', process.env.ZOHO_BOOKINGS_GROUP_ID);
-    }
-
-    const url = `${String(apiDomain).replace(/\/$/, '')}/bookings/v1/json/availableslots?${params.toString()}`;
-    
-    const response = await axios.get(url, {
-      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
-      timeout: 15000
-    });
-
-    const status = String(response.data?.response?.status || '').toLowerCase();
-    if (status !== 'success') return [];
-
-    const slots = response.data?.response?.returnvalue?.data || [];
-    return filterPastSlotsForSelectedDate(Array.isArray(slots) ? slots : [], preferredDate, timeZone);
+    const result = await fetchZohoAvailableSlots({ preferredDate });
+    return result.slots;
   } catch (error) {
     console.error(`${DEBUG_PREFIX} availableslots.failed ${error.message}`);
     return [];
   }
 }
 
-// Update your module.exports to expose the new function
+async function getZohoAvailableSlotsDetailed({ preferredDate }) {
+  try {
+    return await fetchZohoAvailableSlots({ preferredDate });
+  } catch (error) {
+    console.error(`${DEBUG_PREFIX} availableslots.failed ${error.message}`);
+
+    return {
+      slots: [],
+      availabilityStatus: 'error',
+      availabilityMessage: error.message || 'Available slots could not be loaded from Zoho Bookings.'
+    };
+  }
+}
+
 module.exports = {
   createZohoAppointment,
-  getZohoAvailableSlots
+  getZohoAvailableSlots,
+  getZohoAvailableSlotsDetailed
 };
