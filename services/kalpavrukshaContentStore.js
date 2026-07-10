@@ -6,7 +6,7 @@ const CONTENT_FILE = path.join(__dirname, '..', 'data', 'kalpavruksha-content.js
 const DEFAULT_SITE_IMAGES = [
   { id: 'main-gate', label: 'Main gate', imageUrl: '', alt: '' },
   { id: 'compound-wall', label: 'Compound wall', imageUrl: '', alt: '' },
-  { id: 'clubhouse-lawn', label: 'Clubhouse lawn', imageUrl: '', alt: '' },
+  { id: 'clubhouse-lawn', label: 'Site Office', imageUrl: '', alt: '' },
   { id: 'seating-pavilion', label: 'Seating pavilion', imageUrl: '', alt: '' },
 ];
 
