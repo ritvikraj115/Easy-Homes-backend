@@ -249,6 +249,17 @@ async function processSiteVisitPostProcessing(job) {
       pickupLng: normalizedPickupLng,
       notes
     });
+    if (!zohoResponse && slotAvailabilityIssue) {
+      const availabilityError = new Error(
+        slotAvailabilityIssueReason || 'Live slot availability could not be verified; manual confirmation is required.'
+      );
+      availabilityError.code = 'ZOHO_SLOT_AVAILABILITY_UNVERIFIED';
+      availabilityError.details = {
+        message: availabilityError.message,
+        slotAvailabilitySource: slotAvailabilitySource || 'fallback',
+      };
+      throw availabilityError;
+    }
     zohoDebug('zoho.done', { visitId, zohoResponse });
   } catch (zohoError) {
     zohoDebug('zoho.appointment.failed', { visitId, error: zohoError.message });

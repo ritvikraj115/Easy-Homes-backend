@@ -177,10 +177,10 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
       inferDownloadLeadStatus(rawSource);
     const normalizedEmail = normalizeText(email);
 
-    if (!name || !phone || !normalizedEmail) {
+    if (!name || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'name, phone and email are required',
+        message: 'name and phone are required',
       });
     }
 
@@ -196,7 +196,7 @@ exports.captureLayoutDownloadLead = async (req, res, next) => {
     }
     // =========================================================================
 
-    if (!isValidEmail(normalizedEmail)) {
+    if (normalizedEmail && !isValidEmail(normalizedEmail)) {
       return res.status(400).json({
         success: false,
         message: 'A valid email address is required',

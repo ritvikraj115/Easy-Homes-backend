@@ -1,0 +1,28 @@
+{
+  "siteImages": [
+    {
+      "id": "main-gate",
+      "label": "Main gate",
+      "imageUrl": "",
+      "alt": ""
+    },
+    {
+      "id": "compound-wall",
+      "label": "Compound wall",
+      "imageUrl": "",
+      "alt": ""
+    },
+    {
+      "id": "clubhouse-lawn",
+      "label": "Clubhouse lawn",
+      "imageUrl": "",
+      "alt": ""
+    },
+    {
+      "id": "seating-pavilion",
+      "label": "Seating pavilion",
+      "imageUrl": "",
+      "alt": ""
+    }
+  ]
+}

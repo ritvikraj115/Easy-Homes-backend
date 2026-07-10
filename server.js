@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const path = require('path');
 const connectDb = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const auth0Routes = require('./routes/auth0Routes');
@@ -14,6 +15,7 @@ const siteVisitRoutes = require('./routes/siteVisitRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const propertyRoutes = require('./routes/propertyRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const kalpavrukshaRoutes = require('./routes/kalpavrukshaRoutes');
 const forceCanonical = require('./middleware/forceCanonical');
 const compression = require('compression');
 
@@ -39,6 +41,13 @@ app.use(forceCanonical);
 // === JSON PARSER ===
 app.use(express.json());
 app.use(compression());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  immutable: true,
+  maxAge: '365d',
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  },
+}));
 
 // === DB CONNECT ===
 connectDb()
@@ -63,6 +72,7 @@ app.use('/api/site-visits', siteVisitRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/kalpavruksha', kalpavrukshaRoutes);
 
 // === HEALTH CHECK ===
 app.get('/healthz', (_, res) => res.status(200).send('OK'));
