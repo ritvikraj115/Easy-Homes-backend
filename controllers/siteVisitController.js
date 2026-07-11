@@ -4,6 +4,18 @@ const { sendSiteVisitTemplate, sendFreeTextMessage } = require('../services/what
 const { createZohoCrmLead, isZohoCrmStrictMode } = require('../services/zohoCrmService');
 const { createZohoAppointment, getZohoAvailableSlots, getZohoAvailableSlotsDetailed } = require('../services/zohoBookingsService');
 
+const BOOKING_FAILURE_RECIPIENTS = [
+  'santhibushan.p@easyhomess.com',
+  'operations@easyhomess.com',
+];
+
+const BOOKING_FAILURE_SIGNATURE = [
+  'Regards,',
+  'Ritvik Raj',
+  'Developer',
+  'Easy Homes',
+].join('\n');
+
 function isZohoDebugEnabled() {
   const value = String(process.env.ZOHO_BOOKINGS_DEBUG || '').toLowerCase();
   return value === 'true' || value === '1' || value === 'yes' || value === 'on';
@@ -268,19 +280,25 @@ async function processSiteVisitPostProcessing(job) {
     const isSlotError = /(slot not found|not available|mandatory|invalid|service not found)/i.test(failReason);
 
     let slotSuggestionText = '';
+    let slotLookupFailureReason = '';
 
     // If the error was related to slot unavailability, query the official API for available times
     if (isSlotError) {
-      const availableSlots = await getZohoAvailableSlots({ preferredDate });
-      if (availableSlots && availableSlots.length > 0) {
-        slotSuggestionText = `\n\nAvailable time slots for your selected date:\n${availableSlots.join(', ')}\n\nPlease reply to this email or contact us to secure one of these times.`;
-      } else {
-        slotSuggestionText = `\n\nUnfortunately, no alternative time slots are available on this date. Please contact us to choose a different day.`;
+      try {
+        const availableSlots = await getZohoAvailableSlots({ preferredDate });
+        if (availableSlots && availableSlots.length > 0) {
+          slotSuggestionText = `\n\nAvailable time slots for your selected date:\n${availableSlots.join(', ')}\n\nPlease reply to this email or contact us to secure one of these times.`;
+        } else {
+          slotSuggestionText = `\n\nUnfortunately, no alternative time slots are available on this date. Please contact us to choose a different day.`;
+        }
+      } catch (slotError) {
+        slotLookupFailureReason = slotError.message || 'Alternative slot lookup failed.';
+        console.error('[site-visit] available_slots.lookup.failed', slotLookupFailureReason);
+        slotSuggestionText = `\n\nWe could not automatically fetch alternative time slots. Our team will manually review availability and contact you shortly.`;
       }
     }
 
     const failSubject = `Site Visit Booking Issue - ${project}`;
-    const OWNER_EMAIL = 'santhibushan.p@easyhomess.com';
 
     // 1. Send failure notice + slots to User
     if (email) {
@@ -294,15 +312,55 @@ async function processSiteVisitPostProcessing(job) {
       }).catch(err => console.error('[site-visit] Failed to send user booking error email:', err.message));
     }
 
-    // 2. Send failure notice to Owner
-    const failOwnerMsg = `Alert: A Site Visit booking failed to sync with Zoho Bookings.\n\nProject: ${project}\nCustomer: ${name}\nPhone: ${phone}\nEmail: ${email || '-'}\nPreferred Date: ${dateStr}\n\nFailure Reason: ${failReason}\n\nPlease reach out to the customer manually to confirm their visit.`;
+    // 2. Send failure notice to the internal operations team
+    const failOwnerLines = [
+      'Dear Team,',
+      '',
+      'A site visit request was received from the website, but the appointment could not be created in Zoho Bookings.',
+      'Please review the details below and manually confirm the visit with the customer.',
+      '',
+      `Project: ${project}`,
+      `Customer Name: ${name}`,
+      `Phone Number: ${phone}`,
+      `Email: ${email || '-'}`,
+      `Preferred Date/Time: ${dateStr}`,
+      `Transport Required: ${normalizedTransportRequired}`,
+    ];
+    if (normalizedTransportRequired === 'Yes') {
+      failOwnerLines.push(`Pickup Address: ${rawPickupAddress || normalizedPickupAddress || '-'}`);
+      failOwnerLines.push(`Pickup Mode: ${normalizedPickupMode || '-'}`);
+      failOwnerLines.push(
+        `Pickup Coordinates: ${normalizedPickupLat && normalizedPickupLng ? `${normalizedPickupLat}, ${normalizedPickupLng}` : '-'}`
+      );
+    }
+    if (normalizedLandingVariant || normalizedLandingVersion) {
+      failOwnerLines.push(`Landing Version: ${normalizedLandingVersion || '-'} (${normalizedLandingVariant || '-'})`);
+    }
+    if (slotAvailabilitySource || slotAvailabilityIssue || slotAvailabilityIssueReason) {
+      failOwnerLines.push(`Slot Availability Source: ${slotAvailabilitySource || '-'}`);
+      failOwnerLines.push(`Slot Availability Issue: ${slotAvailabilityIssue ? 'Yes' : 'No'}`);
+      failOwnerLines.push(`Slot Availability Issue Reason: ${slotAvailabilityIssueReason || '-'}`);
+    }
+    if (slotLookupFailureReason) {
+      failOwnerLines.push(`Alternative Slot Lookup Failure: ${slotLookupFailureReason}`);
+    }
+    failOwnerLines.push(
+      '',
+      `Failure Reason: ${failReason}`,
+      '',
+      'Action Required:',
+      'Please contact the customer, confirm the correct slot manually, and update the booking/CRM status accordingly.',
+      '',
+      BOOKING_FAILURE_SIGNATURE
+    );
+    const failOwnerMsg = failOwnerLines.join('\n');
 
     sendMail({
-      to: OWNER_EMAIL,
+      to: BOOKING_FAILURE_RECIPIENTS,
       subject: `[ACTION REQUIRED] ${failSubject}`,
       text: failOwnerMsg,
       html: failOwnerMsg.replace(/\n/g, '<br/>')
-    }).catch(err => console.error('[site-visit] Failed to send owner booking error email:', err.message));
+    }).catch(err => console.error('[site-visit] Failed to send internal booking error email:', err.message));
 
     try {
       const crmNotes = [
